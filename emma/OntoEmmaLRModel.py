@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction import DictVectorizer
 
 # class for ontology matcher model
-class OntoEmmaModel:
+class OntoEmmaLRModel:
     def __init__(self):
         self.model = LogisticRegression()
         self.vectorizer = DictVectorizer(sparse=False)

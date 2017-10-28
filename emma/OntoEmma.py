@@ -9,7 +9,7 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from emma.utils import file_util
-from emma.OntoEmmaModel import OntoEmmaModel
+from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
@@ -264,6 +264,56 @@ class OntoEmma:
         model.save(model_path)
         return
 
+    def _align_lr(self, model_path, source_kb, target_kb, candidate_selector, feature_generator):
+        """
+        Align using logistic regression model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :param feature_generator:
+        :return:
+        """
+        # Initialize
+        alignment = []
+
+        sys.stdout.write("Loading model...\n")
+        model = OntoEmmaLRModel()
+        model.load(model_path)
+
+        sys.stdout.write("Making predictions...\n")
+
+        for index, s_ent in enumerate(source_kb.entities):
+            # show progress to user so that they feel good.
+            if index == 1:
+                sys.stdout.write('\n')
+            if index % 10 == 1:
+                sys.stdout.write('\rpredicted alignments for {} out of {} source entities.'.format(
+                    index, len(source_kb.entities)))
+            s_ent_id = s_ent.research_entity_id
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
+                score = model.predict_entity_pair(features)
+                if score[0][1] >= constants.SCORE_THRESHOLD:
+                    alignment.append((s_ent_id, t_ent_id, score[0][1]))
+
+        return alignment
+
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector):
+        """
+        Align using neural network model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :return:
+        """
+        raise(NotImplementedError, "Yet to connect AllenNLP model to OntoEmma")
+        # TODO: connect to allennlp ontoemma model
+        # write candidates to file
+        # call allennlp ontoemma on output candidate file to generate predictions
+        # extract positive alignments
+
     def align(self, s_kb_path, t_kb_path, gold_path, output_path, model_path, model_type):
         """
         Align two input ontologies
@@ -275,37 +325,22 @@ class OntoEmma:
         :param model_type: type of model
         :return:
         """
+        alignment_scores = None
+
         sys.stdout.write("Loading KBs...\n")
         s_kb = self.load_kb(s_kb_path)
         t_kb = self.load_kb(t_kb_path)
 
-        sys.stdout.write("Loading model...\n")
-        model = OntoEmmaModel()
-        model.load(model_path)
-
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
-        feat_gen = FeatureGenerator(s_kb, t_kb)
 
-        sys.stdout.write("Making predictions...\n")
-        alignment = []
-        for index, s_ent in enumerate(s_kb.entities):
-            # show progress to user so that they feel good.
-            if index == 1:
-                sys.stdout.write('\n')
-            if index % 10 == 1:
-                sys.stdout.write('\rpredicted alignments for {} out of {} source entities.'.format(
-                    index, len(s_kb.entities)))
-            s_ent_id = s_ent.research_entity_id
-            for t_ent_id in cand_sel.select_candidates(
-                s_ent_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                features = [feat_gen.calculate_features(s_ent_id, t_ent_id)]
-                score = model.predict_entity_pair(features)
-                if score[0][1] >= constants.SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, t_ent_id, score[0][1]))
-
-        alignment_scores = (None, None, None)
+        if model_type == 'lr':
+            feat_gen = FeatureGenerator(s_kb, t_kb)
+            alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel, feat_gen)
+        elif model_type == 'nn':
+            alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel)
+        else:
+            raise(NotImplementedError, "Model type has not been implemented.")
 
         if gold_path is not None and os.path.exists(gold_path):
             sys.stdout.write("Evaluating against gold standard...\n")
@@ -314,6 +349,7 @@ class OntoEmma:
         if output_path is not None:
             sys.stdout.write("Writing results to file...\n")
             self.write_alignment(output_path, alignment, s_kb_path, t_kb_path)
+
         return alignment_scores
 
     def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb):
