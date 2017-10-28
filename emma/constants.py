@@ -2,6 +2,10 @@ import numpy as np
 
 # Constants for use by OntoEmma
 
+# Accepted model types
+IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
+                           "lr": "Logistic Regression"}
+
 # Score threshold for positive alignment
 SCORE_THRESHOLD = 0.50
 

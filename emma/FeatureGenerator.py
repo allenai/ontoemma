@@ -4,9 +4,9 @@ from nltk.metrics.distance import edit_distance
 from nltk.stem.snowball import SnowballStemmer
 from nltk.stem.wordnet import WordNetLemmatizer
 
-from scigraph.kb.kb_utils_refactor import KnowledgeBase
-import scigraph.ontology_matching.string_utils as string_utils
-import scigraph.ontology_matching.constants as constants
+from emma.kb.kb_utils_refactor import KnowledgeBase
+import emma.utils.string_utils as string_utils
+import emma.constants as constants
 
 
 # class for generating features between entities of two KBs

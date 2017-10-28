@@ -9,9 +9,9 @@ import rdflib
 from collections import defaultdict
 from lxml import etree
 
-from base import file_util
-from scigraph.scripts.str_utils import canonicalize
-from scigraph.common import global_tokenizer
+from emma.utils import file_util
+from emma.utils.string_utils import canonicalize
+from emma.utils.common import global_tokenizer
 
 
 # a lightweight class to represent an entity with a unified schema.

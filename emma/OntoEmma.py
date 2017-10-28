@@ -3,27 +3,26 @@ import sys
 import csv
 import time
 import itertools
-import numpy as np
 import requests
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from base import file_util
-from scigraph.ontology_matching.OntoEmmaModel import OntoEmmaModel
-from scigraph.kb.kb_utils_refactor import KnowledgeBase
-from scigraph.kb.kb_load_refactor import KBLoader
-from scigraph.ontology_matching.CandidateSelection import CandidateSelection
-from scigraph.ontology_matching.FeatureGenerator import FeatureGenerator
-from scigraph.paths import StandardFilePath
-import scigraph.ontology_matching.constants as constants
+from emma.utils import file_util
+from emma.OntoEmmaModel import OntoEmmaModel
+from emma.kb.kb_utils_refactor import KnowledgeBase
+from emma.kb.kb_load_refactor import KBLoader
+from emma.CandidateSelection import CandidateSelection
+from emma.FeatureGenerator import FeatureGenerator
+from emma.paths import StandardFilePath
+import emma.constants as constants
 
 
 # class for training an ontology matcher and aligning input ontologies
 class OntoEmma:
     def __init__(self, missed_file=None):
 
-        paths = StandardFilePath(release_root='/net/nfs.corp/s2-research/scigraph/data/', version='')
+        paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
         self.kb_dir = paths.ontoemma_kb_dir
         self.missed_file = missed_file if missed_file else paths.ontoemma_missed_file
 
@@ -265,14 +264,15 @@ class OntoEmma:
         model.save(model_path)
         return
 
-    def align(self, model_path, s_kb_path, t_kb_path, gold_path, output_path):
+    def align(self, s_kb_path, t_kb_path, gold_path, output_path, model_path, model_type):
         """
         Align two input ontologies
-        :param model_path: path to ontoemma model
         :param s_kb_path: path to source KB
         :param t_kb_path: path to target KB
         :param gold_path: path to gold alignment between source and target KBs
         :param output_path: path to write output alignment
+        :param model_path: path to ontoemma model
+        :param model_type: type of model
         :return:
         """
         sys.stdout.write("Loading KBs...\n")

@@ -6,12 +6,12 @@ import glob
 from collections import defaultdict
 from sklearn.model_selection import train_test_split
 
-from base import App
-from base.traits import Unicode
-from scigraph.paths import StandardFilePath
-from scigraph.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
-from scigraph.ontology_matching.CandidateSelection import CandidateSelection
-import scigraph.ontology_matching.constants as constants
+from emma.utils.base import App
+from emma.utils.traits import Unicode
+from emma.paths import StandardFilePath
+from emma.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
+from emma.CandidateSelection import CandidateSelection
+import emma.constants as constants
 
 
 # class for extracting concept mappings from UMLS
@@ -32,7 +32,7 @@ class UMLSExtractor(App):
     RELA: relation attribute
     """
 
-    paths = StandardFilePath(release_root='/net/nfs.corp/s2-research/scigraph/data/', version='')
+    paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
 
     UMLS_DIR = paths.ontoemma_umls_subset_dir
     OUTPUT_DIR = paths.ontoemma_umls_output_dir

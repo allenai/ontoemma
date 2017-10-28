@@ -2,10 +2,10 @@ import logging
 import os
 from lxml import etree
 
-import rdflib
-from base import file_util
 import re
-from scigraph.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
+import rdflib
+from emma.utils import file_util
+from emma.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
 
 
 # class for loading knowledgebase resources

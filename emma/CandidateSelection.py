@@ -5,9 +5,9 @@ from typing import List
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 
-from scigraph.kb.kb_utils_refactor import KBEntity, KnowledgeBase
-import scigraph.ontology_matching.string_utils as string_utils
-import scigraph.ontology_matching.constants as constants
+from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
+import emma.utils.string_utils as string_utils
+import emma.constants as constants
 
 
 # class that generates match candidates for entities in a source kb from a target kb

@@ -1,5 +1,17 @@
+import re
 import numpy as np
 from sklearn.metrics import pairwise_distances
+
+
+CLEANER_RE = re.compile(r'[^a-zA-Z0-9 ]+')
+
+
+def clean(kp):
+    return CLEANER_RE.sub('', kp)
+
+
+def canonicalize(kp):
+    return clean(kp).lower()
 
 
 def get_idf(c_size, freq):

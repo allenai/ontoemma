@@ -88,8 +88,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
         # tokenize names
-        s_name_tokens = self._tokenizer.tokenize(s_ent['canonical_name'].lower())[0]
-        t_name_tokens = self._tokenizer.tokenize(t_ent['canonical_name'].lower())[0]
+        s_name_tokens = self._tokenizer.tokenize(s_ent['canonical_name'].lower())
+        t_name_tokens = self._tokenizer.tokenize(t_ent['canonical_name'].lower())
 
         # add entity name fields
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
