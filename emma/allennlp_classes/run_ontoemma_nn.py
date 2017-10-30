@@ -9,8 +9,9 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s
 
 from allennlp.commands import main
 
-from ontoemma_dataset_reader import OntologyMatchingDatasetReader
-from ontoemma_model import OntoEmma
+from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
 
 if __name__ == "__main__":

@@ -11,11 +11,11 @@ from allennlp.models.model import Model
 from allennlp.nn import InitializerApplicator
 from allennlp.nn.util import get_text_field_mask
 
-from boolean_f1 import BooleanF1
+from emma.allennlp_classes.boolean_f1 import BooleanF1
 
 
 @Model.register("ontoemmaNN")
-class OntoEmma(Model):
+class OntoEmmaNN(Model):
 
     def __init__(self, vocab: Vocabulary,
                  name_text_field_embedder: TextFieldEmbedder,
@@ -23,7 +23,7 @@ class OntoEmma(Model):
                  siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
                  initializer: InitializerApplicator = InitializerApplicator()) -> None:
-        super(OntoEmma, self).__init__(vocab)
+        super(OntoEmmaNN, self).__init__(vocab)
 
         self.name_text_field_embedder = name_text_field_embedder
         self.num_classes = self.vocab.get_vocab_size("labels")
@@ -112,7 +112,7 @@ class OntoEmma(Model):
         }
 
     @classmethod
-    def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmma':
+    def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
         name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
         name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))

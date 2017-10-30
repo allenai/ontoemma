@@ -15,7 +15,7 @@ from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 
-from boolean_field import BooleanField
+from emma.allennlp_classes.boolean_field import BooleanField
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
