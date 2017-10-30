@@ -2,3 +2,5 @@ config/*
 *__pycache__
 .DS_Store
 .idea/*
+
+!config/example_ontoemma_config.json
