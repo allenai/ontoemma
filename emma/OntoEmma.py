@@ -1,8 +1,8 @@
 import os
 import sys
 import csv
-import time
 import json
+import tqdm
 import itertools
 import requests
 from lxml import etree
@@ -115,6 +115,25 @@ class OntoEmma:
         return mappings
 
     @staticmethod
+    def _load_alignment_from_json(gold_path):
+        """
+        Parse alignments from json gold alignment file path.
+        :param gold_path: path to gold alignment file
+        :return:
+        """
+        mappings = []
+
+        # open data file and read lines
+        with open(gold_path, 'r') as f:
+            for line in tqdm.tqdm(f):
+                dataline = json.loads(line)
+                s_ent = dataline['source_ent']
+                t_ent = dataline['target_ent']
+                label = dataline['label']
+                mappings.append((s_ent['research_entity_id'], t_ent['research_entity_id'], float(label)))
+        return mappings
+
+    @staticmethod
     def _load_alignment_from_rdf(gold_path):
         """
         Parse alignments from rdf gold alignment file path
@@ -159,9 +178,12 @@ class OntoEmma:
         elif fext == '.rdf':
             return self._load_alignment_from_rdf(gold_path)
         else:
-            raise NotImplementedError(
-                "Unknown input alignment file type. Cannot parse."
-            )
+            try:
+                return self._load_alignment_from_json(gold_path)
+            except:
+                raise NotImplementedError(
+                    "Unknown input alignment file type. Cannot parse."
+                )
 
     def train(
         self, model_type: str, model_path: str, config_file: str
@@ -420,7 +442,7 @@ class OntoEmma:
         missed = gold_positives.difference(alignment_positives)
 
         if missed_file:
-            with open(missed_file, 'w') as outf:
+            with open(missed_file, 'w+') as outf:
                 for s_ent, t_ent in missed:
                     try:
                         s_names = s_kb.get_entity_by_research_entity_id(
@@ -586,63 +608,3 @@ class OntoEmma:
             raise NotImplementedError(
                 "Unknown output file type. Cannot write alignment to file."
             )
-
-
-if __name__ == '__main__':
-    t = time.time()
-
-    matcher = OntoEmma()
-    args = sys.argv[1:]
-    mode = args[0]
-
-    if mode == 'train':
-        # training mode, training data specified
-        model_type = args[1]
-        model_path = args[2]
-        config_file = args[3]
-        matcher.train(
-           model_type, model_path,
-           config_file
-        )
-    elif mode == 'align':
-        # alignment mode, source kb, target kb, gold alignment, and output file specified
-        model_type = args[1]
-        model_path = args[2]
-        source_kb_path = args[3]
-        target_kb_path = args[4]
-        gold_file_path = None
-        output_file_path = None
-        if len(args) > 5:
-            gold_file_path = args[5]
-        if len(args) > 6:
-            output_file_path = args[6]
-        matcher.align(
-            model_type, model_path,
-            source_kb_path, target_kb_path,
-            gold_file_path, output_file_path
-        )
-    elif mode == 'test':
-        # evaluate candidate selection
-        test_type = args[1]
-        source_kb_path = args[2]
-        target_kb_path = args[3]
-
-        if test_type == "eval_cs":
-            gold_file_path = args[4]
-            output_file_path = None
-            missed_data_file = None
-            if len(args) > 5:
-                output_file_path = args[5]
-            if len(args) > 6:
-                missed_data_file = args[6]
-            matcher.eval_cs(
-                source_kb_path, target_kb_path, gold_file_path, output_file_path, missed_data_file
-            )
-        else:
-            sys.stdout.write("Unknown test type, exiting...\n")
-    else:
-        sys.stdout.write('Unknown mode, exiting...\n')
-        sys.exit(1)
-
-    sys.stdout.write("Time taken: %f\n" % (time.time() - t))
-    sys.exit(0)
