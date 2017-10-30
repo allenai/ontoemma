@@ -22,45 +22,45 @@ This ontology matcher can be used to generate alignments between knowledgebases.
 
 ## OntoEmma program
 
-### OntoEmmaWrapper module
-The module `OntoEmmaWrapper` is used to run the OntoEmma program. The wrapper implements the OAEI-specified arguments:
+### Run OntoEmma (make an alignment between two KBs)
+To run OntoEmma, use `run_ontoemma.py`. The wrapper implements the OAEI-specified arguments:
 
+- -p \<model_type> (lr = logistic regression, nn = neural network)
+- -m \<pretrained_model>
 - -s \<source_ont> 
 - -t \<target_ont>
 - -i \<input_alignment>
 - -o \<output_alignment>
-- -m \<pretrained_model>
 
 Example usage: 
 
-`python OntoEmmaWrapper.py -s source_ont.owl -t target_ont.owl -i input_alignment.tsv -o output_alignment.tsv -m pretrained_model`
+`python run_ontoemma.py -p nn -m model_path -s source_ont.owl -t target_ont.owl -i input_alignment.tsv -o output_alignment.tsv`
 
 This script assumes that the model has been pre-trained, and uses *align* functions in `OntoEmma.py` accordingly.
 
+### Train OntoEmma (train a new model)
+To train an alignment model, use `train_ontoemma.py`. The wrapper takes the following arguments:
+
+- -p \<model_type> (lr = logistic regression, nn = neural network)
+- -m \<pretrained_model>
+- -c \<configuration_file>
+
+Example usage:
+
+`python train_ontoemma.py -p nn -m model_path -c configuration_file.json`
+
+This script will then use the *train* function in `OntoEmma.py` to train the model.
+
 ### OntoEmma module
-The module `OntoEmma` is used for accessing the training and alignment capabilities of the OntoEmma model.
-
-The first argument specifies the mode of operation:
-- `mode` the mode of operation, see *train* and *align*
-
-The input arguments for training are:
-- `model_serialization_path` path to save the model
-- `training_data_path` path to training data
-- `development_data_path` path to development data
-
-The input arguments for alignment are:
-- `source_kb_path` path to the source KB file
-- `target_kb_path` path to the target KB file
-- `gold_file_path` (optional) path to the gold standard alignment
-- `output_file_path` (optional) path to the output file for saving alignments
+The module `OntoEmma` is used for accessing the training and alignment capabilities of OntoEmma.
 
 #### Train mode
-In training mode, the `OntoEmma` module can use the `OntoEmmaModel` module or AllenNLP to train the model:
+In training mode, the `OntoEmma` module can use the `OntoEmmaLRModel` logistic regression module or AllenNLP to train the model:
 
 NN with AllenNLP:
 
-- Write training and development file names to configuration file. Training data is formatted according to [Data format: OntoEmma training data](https://docs.google.com/a/allenai.org/document/d/1t8cwpTRqcscFEZOQJrtTMAhjAYzlA_demc9GCY0xYaU/edit?usp=sharing)
-- Train model using AllenNLP; example configuration file given in: `ontoemma_configuration.json`
+- Training data is formatted according to [Data format: OntoEmma training data](https://docs.google.com/a/allenai.org/document/d/1t8cwpTRqcscFEZOQJrtTMAhjAYzlA_demc9GCY0xYaU/edit?usp=sharing)
+- Train model using AllenNLP; example configuration file given in: `config/example_ontoemma_config.json`
 - Save model to specified serialization directory
 
 When training other models with `OntoEmmaModel`, the module performs the following:
@@ -74,23 +74,24 @@ When training other models with `OntoEmmaModel`, the module performs the followi
 In alignment mode, the `OntoEmma` module performs the following:
 
 - Load source and target ontologies specified by `source_kb_path` and `target_kb_path` (`OntoEmma` is able to handle KnowledgeBase json and pickle files, as well as KBs in OBO, OWL, TTL, and RDF formats to the best of its ability. It can also load an ontology from a web URI.)
-- Load `OntoEmmaModel` from disk
 - Initialize `CandidateSelection` module for source and target KBs
+
+If using NN model with AllenNLP:
+
+- Write candidates to file
+- Call AllenNLP OntoEmma predictor on data
+- Read predictor output from file
+
+If using logistic regression model:
+
+- Load LR model
 - Initialize `FeatureGenerator` module
 - For each candidate pair, generate features using `FeatureGenerator` and make alignment predictions using `OntoEmmaModel`
+
+For all models following predictions:
+
 - If `gold_file_path` is specified, evaluate alignment against gold standard
 - If `output_file_path` is specified, save alignment to file
-
-### OntoEmma model 
-The module `OntoEmmaModel` contains a model trained to make alignments between entities in two KBs. It is accessed through `OntoEmma`.
-
-It has the following methods:
-
-- `save` saves the model to file
-- `load` load a model from file
-- `train` trains the model based on input features and labels
-- `score_accuracy` classifies based on input features and generate an accuracy score based on input labels
-- `predict_entity_pair` generates prediction probabilities based on input feature vector
 
 ### Candidate selection module
 The module `CandidateSelection` is used to select candidate matched pairs from the source and target KBs.
