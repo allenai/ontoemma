@@ -10,7 +10,6 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from allennlp.commands import main
-from emma.utils import file_util
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
@@ -22,11 +21,10 @@ import emma.constants as constants
 
 # class for training an ontology matcher and aligning input ontologies
 class OntoEmma:
-    def __init__(self, missed_file=None):
+    def __init__(self):
 
         paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
         self.kb_dir = paths.ontoemma_kb_dir
-        self.missed_file = missed_file if missed_file else paths.ontoemma_missed_file
 
         self.kb_file_paths = dict()
         self.kb_pairs = set([])
@@ -190,109 +188,112 @@ class OntoEmma:
 
             main(prog="python -m allennlp.run")
 
-        elif model_type == "lr":
+            sys.stdout.write("done.\n")
+            sys.exit(0)
 
-            # read model config
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-
-            # parse parameters
-            training_data_path = config['train_data_path']
-            dev_data_path = config['validation_data_path']
-
-            # create model
+        # create model
+        if model_type == "lr":
             model = OntoEmmaLRModel()
+        else:
+            raise (NotImplementedError, "Unknown model type")
 
-            # load training data
-            training_data = self.load_alignment(training_data_path)
-            training_pairs = [(ent1, ent2) for ent1, ent2, _ in training_data]
-            training_labels = [label for _, _, label in training_data]
+        # read model config
+        with open(config_file, 'r') as f:
+            config = json.load(f)
 
-            training_ordered_indices = []
-            training_features = []
+        # parse parameters
+        training_data_path = config['train_data_path']
+        dev_data_path = config['validation_data_path']
 
-            # load development data
-            dev_data = self.load_alignment(dev_data_path)
-            dev_pairs = [(ent1, ent2) for ent1, ent2, _ in dev_data]
-            dev_labels = [label for _, _, label in dev_data]
+        # load training data
+        training_data = self.load_alignment(training_data_path)
+        training_pairs = [(ent1, ent2) for ent1, ent2, _ in training_data]
+        training_labels = [label for _, _, label in training_data]
 
-            dev_ordered_indices = []
-            dev_features = []
+        training_ordered_indices = []
+        training_features = []
 
-            sys.stdout.write('Training data size: %i\n' % len(training_data))
-            sys.stdout.write('Development data size: %i\n' % len(dev_data))
+        # load development data
+        dev_data = self.load_alignment(dev_data_path)
+        dev_pairs = [(ent1, ent2) for ent1, ent2, _ in dev_data]
+        dev_labels = [label for _, _, label in dev_data]
 
-            # initialize KBs
-            s_kb = KnowledgeBase()
-            t_kb = KnowledgeBase()
+        dev_ordered_indices = []
+        dev_features = []
 
-            # iterate through kb pairs
-            for s_kb_name, t_kb_name in self.kb_pairs:
-                training_matches = [
-                    i for i, p in enumerate(training_pairs)
-                    if p[0].startswith(s_kb_name) and p[1].startswith(t_kb_name)
-                ]
-                dev_matches = [
-                    i for i, p in enumerate(dev_pairs)
-                    if p[0].startswith(s_kb_name) and p[1].startswith(t_kb_name)
-                ]
-                # load kbs if matches not empty
-                if len(training_matches) > constants.MIN_TRAINING_SET_SIZE:
-                    training_ordered_indices += training_matches
-                    dev_ordered_indices += dev_matches
-                    sys.stdout.write(
-                        "\tCalculating features for pairs between %s and %s\n" %
-                        (s_kb_name, t_kb_name)
+        sys.stdout.write('Training data size: %i\n' % len(training_data))
+        sys.stdout.write('Development data size: %i\n' % len(dev_data))
+
+        # initialize KBs
+        s_kb = KnowledgeBase()
+        t_kb = KnowledgeBase()
+
+        # iterate through kb pairs
+        for s_kb_name, t_kb_name in self.kb_pairs:
+            training_matches = [
+                i for i, p in enumerate(training_pairs)
+                if p[0].startswith(s_kb_name) and p[1].startswith(t_kb_name)
+            ]
+            dev_matches = [
+                i for i, p in enumerate(dev_pairs)
+                if p[0].startswith(s_kb_name) and p[1].startswith(t_kb_name)
+            ]
+            # load kbs if matches not empty
+            if len(training_matches) > constants.MIN_TRAINING_SET_SIZE:
+                training_ordered_indices += training_matches
+                dev_ordered_indices += dev_matches
+                sys.stdout.write(
+                    "\tCalculating features for pairs between %s and %s\n" %
+                    (s_kb_name, t_kb_name)
+                )
+
+                # load KBs if necessary
+                if s_kb.name != s_kb_name:
+                    s_kb = s_kb.load(self.kb_file_paths[s_kb_name])
+                if t_kb.name != t_kb_name:
+                    t_kb = t_kb.load(self.kb_file_paths[t_kb_name])
+
+                # initialize feature generator with pair of KBs
+                feat_gen = FeatureGenerator(s_kb, t_kb)
+
+                # calculate features for training pairs
+                for i in training_matches:
+                    s_ent_id, t_ent_id = training_pairs[i]
+                    training_features.append(
+                        feat_gen.calculate_features(s_ent_id, t_ent_id)
                     )
 
-                    # load KBs if necessary
-                    if s_kb.name != s_kb_name:
-                        s_kb = s_kb.load(self.kb_file_paths[s_kb_name])
-                    if t_kb.name != t_kb_name:
-                        t_kb = t_kb.load(self.kb_file_paths[t_kb_name])
+                # calculate features for development pairs
+                for i in dev_matches:
+                    s_ent_id, t_ent_id = dev_pairs[i]
+                    dev_features.append(
+                        feat_gen.calculate_features(s_ent_id, t_ent_id)
+                    )
 
-                    # initialize feature generator with pair of KBs
-                    feat_gen = FeatureGenerator(s_kb, t_kb)
+        sys.stdout.write("Training...\n")
 
-                    # calculate features for training pairs
-                    for i in training_matches:
-                        s_ent_id, t_ent_id = training_pairs[i]
-                        training_features.append(
-                            feat_gen.calculate_features(s_ent_id, t_ent_id)
-                        )
+        training_labels = [
+            training_labels[i] for i in training_ordered_indices
+        ]
 
-                    # calculate features for development pairs
-                    for i in dev_matches:
-                        s_ent_id, t_ent_id = dev_pairs[i]
-                        dev_features.append(
-                            feat_gen.calculate_features(s_ent_id, t_ent_id)
-                        )
+        model.train(training_features, training_labels)
 
-            sys.stdout.write("Training...\n")
+        training_accuracy = model.score_accuracy(
+            training_features, training_labels
+        )
+        sys.stdout.write(
+            "Accuracy on training data set: %.2f\n" % training_accuracy
+        )
 
-            training_labels = [
-                training_labels[i] for i in training_ordered_indices
-            ]
+        dev_labels = [dev_labels[i] for i in dev_ordered_indices]
 
-            model.train(training_features, training_labels)
+        dev_accuracy = model.score_accuracy(dev_features, dev_labels)
+        sys.stdout.write(
+            "Accuracy on development data set: %.2f\n" % dev_accuracy
+        )
 
-            training_accuracy = model.score_accuracy(
-                training_features, training_labels
-            )
-            sys.stdout.write(
-                "Accuracy on training data set: %.2f\n" % training_accuracy
-            )
+        model.save(model_path)
 
-            dev_labels = [dev_labels[i] for i in dev_ordered_indices]
-
-            dev_accuracy = model.score_accuracy(dev_features, dev_labels)
-            sys.stdout.write(
-                "Accuracy on development data set: %.2f\n" % dev_accuracy
-            )
-
-            model.save(model_path)
-        else:
-            raise(NotImplementedError, "Unknown model type")
         return
 
     def _align_lr(self, model_path, source_kb, target_kb, candidate_selector, feature_generator):
@@ -345,7 +346,7 @@ class OntoEmma:
         # call allennlp ontoemma on output candidate file to generate predictions
         # extract positive alignments
 
-    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path):
+    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, missed_path=None):
         """
         Align two input ontologies
         :param model_type: type of model
@@ -354,6 +355,7 @@ class OntoEmma:
         :param t_kb_path: path to target KB
         :param gold_path: path to gold alignment between source and target KBs
         :param output_path: path to write output alignment
+        :param missed_path: optional parameter for outputting missed alignments
         :return:
         """
         alignment_scores = None
@@ -373,9 +375,12 @@ class OntoEmma:
         else:
             raise(NotImplementedError, "Model type has not been implemented.")
 
+        if missed_path is None and output_path is not None:
+            missed_path = output_path + '.ontoemma.missed'
+
         if gold_path is not None and os.path.exists(gold_path):
             sys.stdout.write("Evaluating against gold standard...\n")
-            alignment_scores = self.evaluate_alignment(gold_path, alignment, s_kb, t_kb)
+            alignment_scores = self.evaluate_alignment(gold_path, alignment, s_kb, t_kb, missed_path)
 
         if output_path is not None:
             sys.stdout.write("Writing results to file...\n")
@@ -383,13 +388,14 @@ class OntoEmma:
 
         return alignment_scores
 
-    def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb):
+    def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb, missed_file):
         """
         Make predictions on features and evaluate against gold
         :param gold_path: path to gold alignment file
         :param alignment: OntoEmma-produced alignment
         :param s_kb: source kb
         :param t_kb: target kb
+        :param missed_file: file to write missed data
         :return:
         """
         gold_positives = set(
@@ -413,23 +419,24 @@ class OntoEmma:
 
         missed = gold_positives.difference(alignment_positives)
 
-        with open(self.missed_file, 'w') as outf:
-            for s_ent, t_ent in missed:
-                try:
-                    s_names = s_kb.get_entity_by_research_entity_id(
-                        s_ent
-                    ).aliases
-                    t_names = t_kb.get_entity_by_research_entity_id(
-                        t_ent
-                    ).aliases
-                    outf.write(
-                        '%s\t%s\t%s\t%s\n' % (
-                            s_ent, t_ent, ','.join(s_names),
-                            ','.join(t_names)
+        if missed_file:
+            with open(missed_file, 'w') as outf:
+                for s_ent, t_ent in missed:
+                    try:
+                        s_names = s_kb.get_entity_by_research_entity_id(
+                            s_ent
+                        ).aliases
+                        t_names = t_kb.get_entity_by_research_entity_id(
+                            t_ent
+                        ).aliases
+                        outf.write(
+                            '%s\t%s\t%s\t%s\n' % (
+                                s_ent, t_ent, ','.join(s_names),
+                                ','.join(t_names)
+                            )
                         )
-                    )
-                except AttributeError:
-                    outf.write('%s\t%s\t%s\t%s\n' % (s_ent, t_ent, '', ''))
+                    except AttributeError:
+                        outf.write('%s\t%s\t%s\t%s\n' % (s_ent, t_ent, '', ''))
 
         precision = None
         recall = None
