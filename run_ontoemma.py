@@ -100,8 +100,9 @@ def main(argv):
     if source_ont_file is not None and target_ont_file is not None:
         matcher = OntoEmma()
         matcher.align(
-            source_ont_file, target_ont_file, input_alignment_file,
-            output_alignment_file, model_path, model_type
+            model_type, model_path,
+            source_ont_file, target_ont_file,
+            input_alignment_file, output_alignment_file
         )
 
 
