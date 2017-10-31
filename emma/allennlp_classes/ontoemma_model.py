@@ -91,7 +91,7 @@ class OntoEmmaNN(Model):
 
         if label is not None:
             # compute loss and accuracy
-            loss = self.loss(sigmoid_output, label.float().view(-1))
+            loss = self.loss(sigmoid_output, label.float())
             self.accuracy(predicted_label, label)
             output_dict["loss"] = loss
 

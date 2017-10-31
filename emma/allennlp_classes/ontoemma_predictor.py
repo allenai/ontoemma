@@ -15,6 +15,12 @@ class OntoEmmaPredictor(Predictor):
         super(OntoEmmaPredictor, self).__init__(model, dataset_reader)
 
     @overrides
+    def predict_json(self, inputs: JsonDict, cuda_device: int = -1) -> JsonDict:
+        instance = self._json_to_instance(inputs)
+        outputs = self._model.forward_on_instance(instance, cuda_device)
+        return sanitize(outputs)
+
+    @overrides
     def _json_to_instance(self, json: JsonDict) -> Instance:
         """
         Expects JSON that looks like ``{"sentence": "..."}``
