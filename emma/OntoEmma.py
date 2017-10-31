@@ -201,6 +201,7 @@ class OntoEmma:
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
+            from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
@@ -375,6 +376,7 @@ class OntoEmma:
         """
         alignment = []
 
+        from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
