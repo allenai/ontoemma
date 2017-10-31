@@ -27,18 +27,12 @@ import emma.constants as constants
 class OntoEmma:
     def __init__(self):
 
-        paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
+        paths = StandardFilePath()
         self.kb_dir = paths.ontoemma_kb_dir
 
         self.kb_file_paths = dict()
         self.kb_pairs = set([])
         self._get_kb_fnames()
-
-        sys.stdout.write("Configured variables:\n")
-        sys.stdout.write("\tScore threshold: %.2f\n" % constants.SCORE_THRESHOLD)
-        sys.stdout.write(
-            "\tTop k candidates kept: %i\n" % constants.KEEP_TOP_K_CANDIDATES
-        )
 
     def _get_kb_fnames(self):
         """
@@ -206,7 +200,7 @@ class OntoEmma:
         if model_type == "nn":
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
-            # import allennlp ontoemma classes (to register)
+            # import allennlp ontoemma classes (to register -- necessary, do not remove)
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
