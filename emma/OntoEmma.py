@@ -9,7 +9,11 @@ from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from allennlp.commands import main
+from allennlp.commands.train import train_model_from_file
+
+from allennlp.models.archival import load_archive
+from allennlp.service.predictors import Predictor
+
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
@@ -202,16 +206,15 @@ class OntoEmma:
         if model_type == "nn":
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
+            # import allennlp ontoemma classes (to register)
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
-            # trim remaining arguments
-            sys.argv = ['allennlp.run', 'train', config_file, '--serialization_dir', model_path]
-
-            main(prog="python -m allennlp.run")
+            # train allennlp model
+            train_model_from_file(config_file, model_path)
 
             sys.stdout.write("done.\n")
-            sys.exit(0)
+            return
 
         # create model
         if model_type == "lr":
@@ -354,6 +357,20 @@ class OntoEmma:
 
         return alignment
 
+    def _form_json_entity(self, ent):
+        """
+        Return json representation of entity
+        :param ent:
+        :return:
+        """
+        return {
+                    'research_entity_id': ent.research_entity_id,
+                    'canonical_name': ent.canonical_name,
+                    'aliases': ent.aliases,
+                    'definition': ent.definition,
+                    'other_contexts': ent.other_contexts
+                }
+
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector):
         """
         Align using neural network model
@@ -362,11 +379,33 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        raise(NotImplementedError, "Yet to connect AllenNLP model to OntoEmma")
-        # TODO: connect to allennlp ontoemma model
-        # write candidates to file
-        # call allennlp ontoemma on output candidate file to generate predictions
-        # extract positive alignments
+        alignment = []
+
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+        from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
+
+        archive = load_archive(model_path)
+        predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
+
+        # create iterator for candidate pairs
+        for s_ent in source_kb.entities:
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent.research_entity_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                json_data = {
+                    'source_ent': self._form_json_entity(s_ent),
+                    'target_ent': self._form_json_entity(t_ent),
+                    'label': 0
+                }
+                result = predictor.predict_json(json_data)
+                if result['predicted_label'] == [1.0]:
+                    sys.stdout.write('Predicted alignment between %s and %s.\n' % (
+                        s_ent.canonical_name, t_ent.canonical_name
+                    ))
+                    alignment.append((s_ent.research_entity_id, t_ent_id, 1.0))
+        return alignment
 
     def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, missed_path=None):
         """
@@ -442,7 +481,16 @@ class OntoEmma:
         missed = gold_positives.difference(alignment_positives)
 
         if missed_file:
-            with open(missed_file, 'w+') as outf:
+            dir_name, file_name = os.path.split(missed_file)
+            if not os.path.exists(dir_name):
+                try:
+                    os.makedirs(dir_name)
+                except OSError:
+                    raise(
+                        OSError,
+                        "Missed file directory does not exist and OntoEmma cannot make it.\n"
+                    )
+            with open(missed_file, 'w') as outf:
                 for s_ent, t_ent in missed:
                     try:
                         s_names = s_kb.get_entity_by_research_entity_id(
@@ -460,9 +508,9 @@ class OntoEmma:
                     except AttributeError:
                         outf.write('%s\t%s\t%s\t%s\n' % (s_ent, t_ent, '', ''))
 
-        precision = None
-        recall = None
-        f1_score = None
+        precision = 0.0
+        recall = 0.0
+        f1_score = 0.0
 
         if len(alignment_positives) > 0:
             precision = len(alignment_positives.intersection(gold_positives)
@@ -472,12 +520,9 @@ class OntoEmma:
             if precision + recall > 0.0:
                 f1_score = (2 * precision * recall / (precision + recall))
 
-        if precision:
-            sys.stdout.write('Precision: %.2f\n' % precision)
-        if recall:
-            sys.stdout.write('Recall: %.2f\n' % recall)
-        if f1_score:
-            sys.stdout.write('F1-score: %.2f\n' % f1_score)
+        sys.stdout.write('Precision: %.2f\n' % precision)
+        sys.stdout.write('Recall: %.2f\n' % recall)
+        sys.stdout.write('F1-score: %.2f\n' % f1_score)
 
         return precision, recall, f1_score
 
