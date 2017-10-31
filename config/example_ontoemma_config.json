@@ -9,10 +9,16 @@
       "token_characters": {
         "type": "characters"
       }
+    },
+    "token_only_indexer": {
+      "tokens": {
+        "type": "single_id",
+        "lowercase_tokens": true
+      }
     }
   },
-  "train_data_path": "ontoemma.context.mini.train",
-  "validation_data_path": "ontoemma.context.mini.dev",
+  "train_data_path": "emma/tests/data/test.ontoemma.micro.train",
+  "validation_data_path": "emma/tests/data/test.ontoemma.micro.dev",
   "model": {
     "type": "ontoemmaNN",
     "name_text_field_embedder": {
@@ -41,6 +47,19 @@
                     "embedding_dim": 50
             }
     },
+    "definition_text_field_embedder": {
+            "tokens": {
+                    "type": "embedding",
+                    "embedding_dim": 50
+            }
+    },
+    "context_text_field_embedder": {
+            "type": "list_embedder",
+            "tokens": {
+                    "type": "embedding",
+                    "embedding_dim": 50
+            }
+    },
     "name_rnn_encoder": {
       "type": "rnn",
       "input_size": 50,
@@ -49,8 +68,24 @@
       "dropout": 0.2,
       "bidirectional": true
     },
+    "definition_encoder": {
+      "type": "lstm",
+      "input_size": 50,
+      "hidden_size": 50,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "bidirectional": true
+    },
+    "context_encoder": {
+      "type": "lstm",
+      "input_size": 50,
+      "hidden_size": 50,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "bidirectional": true
+    },
     "siamese_feedforward": {
-      "input_dim": 100,
+      "input_dim": 400,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -64,11 +99,11 @@
       "dropout": [0.2, 0.0]
     }
   },
-  "iterator": {"type": "basic", "batch_size": 50},
+  "iterator": {"type": "basic", "batch_size": 20},
   "trainer": {
     "optimizer": "adam",
     "num_epochs": 50,
-    "patience": 8,
+    "patience": 15,
     "cuda_device": -1
   }
 }
