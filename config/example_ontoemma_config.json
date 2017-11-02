@@ -103,7 +103,7 @@
   "trainer": {
     "optimizer": "adam",
     "num_epochs": 50,
-    "patience": 25,
+    "patience": 3,
     "cuda_device": -1
   }
 }
