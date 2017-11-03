@@ -14,6 +14,8 @@ from allennlp.commands.train import train_model_from_file
 from allennlp.models.archival import load_archive
 from allennlp.service.predictors import Predictor
 
+import torch
+
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
@@ -205,8 +207,9 @@ class OntoEmma:
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
-            # train allennlp model
-            train_model_from_file(config_file, model_path)
+            with torch.cuda.device(3):
+                # train allennlp model
+                train_model_from_file(config_file, model_path)
 
             sys.stdout.write("done.\n")
             return
