@@ -10,11 +10,13 @@ from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.file_utils import cached_path
 from allennlp.data.tokenizers import Tokenizer, WordTokenizer
-from allennlp.data.fields import Field, TextField, ListField, BooleanField
+from allennlp.data.fields import Field, TextField, ListField
 from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
+
+from emma.allennlp_classes.boolean_field import BooleanField
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
