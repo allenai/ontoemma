@@ -10,8 +10,9 @@ from allennlp.modules import Seq2VecEncoder, TextFieldEmbedder, FeedForward, Tim
 from allennlp.models.model import Model
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from allennlp.nn.util import get_text_field_mask
-from allennlp.training.metrics.boolean_f1 import BooleanF1
 from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
+
+from emma.allennlp_classes.boolean_f1 import BooleanF1
 
 
 @Model.register("ontoemmaNN")
