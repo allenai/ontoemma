@@ -4,18 +4,17 @@ import logging
 from overrides import overrides
 import json
 import tqdm
+import random
 
 from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.file_utils import cached_path
 from allennlp.data.tokenizers import Tokenizer, WordTokenizer
-from allennlp.data.fields import Field, TextField, ListField
+from allennlp.data.fields import Field, TextField, ListField, BooleanField
 from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-
-from emma.allennlp_classes.boolean_field import BooleanField
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -52,7 +51,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
                                {'tokens': SingleIdTokenIndexer(namespace="tokens"),
                                 'token_characters': TokenCharactersIndexer(namespace="token_characters")}
         self._token_only_indexer = token_only_indexer or \
-                                   {'tokens': SingleIdTokenIndexer(namespace="tokens")}
+                               {'tokens': SingleIdTokenIndexer(namespace="tokens")}
         self._tokenizer = tokenizer or WordTokenizer()
 
     @overrides
@@ -75,8 +74,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
                 instances.append(self.text_to_instance(s_ent, t_ent, label))
 
                 if label == 1:
-                    for i in range(0, 4):
-                        instances.append(self.text_to_instance(s_ent, t_ent, label))
+                    for i in range(4):
+                        instances.append(instances[-1])
 
         if not instances:
             raise ConfigurationError("No instances were read from the given filepath {}. "
@@ -88,6 +87,10 @@ class OntologyMatchingDatasetReader(DatasetReader):
                          s_ent: dict,
                          t_ent: dict,
                          label: str = None) -> Instance:
+
+        # randomly sample up to 10 contexts only
+        sample_n = lambda l: l if len(l) <= 20 else random.sample(l, 20)
+
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
         # tokenize names
@@ -98,14 +101,17 @@ class OntologyMatchingDatasetReader(DatasetReader):
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
         fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
 
+        s_aliases = sample_n(s_ent['aliases'])
+        t_aliases = sample_n(t_ent['aliases'])
+
         # add entity alias fields
         fields['s_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._token_only_indexer)
-             for a in s_ent['aliases']]
+            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+             for a in s_aliases]
         )
         fields['t_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._token_only_indexer)
-             for a in t_ent['aliases']]
+            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+             for a in t_aliases]
         )
 
         # add entity definition fields
@@ -119,29 +125,29 @@ class OntologyMatchingDatasetReader(DatasetReader):
         else:
             fields['t_ent_def'] = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
 
-        # add entity context fields
-        s_contexts = s_ent['other_contexts']
-        t_contexts = t_ent['other_contexts']
-
-        if s_contexts:
-            fields['s_ent_context'] = ListField(
-                [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-                 for c in s_contexts]
-            )
-        else:
-            fields['s_ent_context'] = ListField(
-                [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
-            )
-
-        if t_contexts:
-            fields['t_ent_context'] = ListField(
-                [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-                 for c in t_contexts]
-            )
-        else:
-            fields['t_ent_context'] = ListField(
-                [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
-            )
+        # # add entity context fields
+        # s_contexts = sample_n(s_ent['other_contexts'])
+        # t_contexts = sample_n(t_ent['other_contexts'])
+        #
+        # if s_contexts:
+        #     fields['s_ent_context'] = ListField(
+        #         [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
+        #          for c in s_contexts]
+        #     )
+        # else:
+        #     fields['s_ent_context'] = ListField(
+        #         [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
+        #     )
+        #
+        # if t_contexts:
+        #     fields['t_ent_context'] = ListField(
+        #         [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
+        #          for c in t_contexts]
+        #     )
+        # else:
+        #     fields['t_ent_context'] = ListField(
+        #         [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
+        #     )
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)

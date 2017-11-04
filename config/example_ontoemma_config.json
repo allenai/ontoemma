@@ -17,14 +17,17 @@
       }
     }
   },
-  "train_data_path": "emma/tests/data/test.ontoemma.micro.train",
-  "validation_data_path": "emma/tests/data/test.ontoemma.micro.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.dev",
   "model": {
     "type": "ontoemmaNN",
     "name_text_field_embedder": {
             "tokens": {
                     "type": "embedding",
                     "embedding_dim": 25
+//                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/w2v/s2_data/weights.txt",
+//                    "embedding_dim": 300,
+//                    "trainable": false
             },
             "token_characters": {
                     "type": "character_encoding",
@@ -40,36 +43,17 @@
                     "dropout": 0.2
             }
     },
-    "alias_text_field_embedder": {
-            "type": "list_embedder",
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
-    "definition_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
     "context_text_field_embedder": {
-            "type": "list_embedder",
             "tokens": {
                     "type": "embedding",
                     "embedding_dim": 50
+//                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/w2v/s2_data/weights.txt",
+//                    "embedding_dim": 300,
+//                    "trainable": false
             }
     },
     "name_rnn_encoder": {
       "type": "rnn",
-      "input_size": 50,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
-    },
-    "definition_encoder": {
-      "type": "lstm",
       "input_size": 50,
       "hidden_size": 50,
       "num_layers": 2,
@@ -85,7 +69,7 @@
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 400,
+      "input_dim": 300,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -99,11 +83,23 @@
       "dropout": [0.2, 0.0]
     }
   },
-  "iterator": {"type": "basic", "batch_size": 20},
+  "iterator": {
+    "type": "bucket",
+    "sorting_keys": [
+//                     ["s_ent_context", "num_tokens"],
+//                     ["t_ent_context", "num_tokens"],
+                     ["s_ent_def", "num_tokens"],
+                     ["t_ent_def", "num_tokens"],
+                     ["s_ent_aliases", "num_tokens"],
+                     ["t_ent_aliases", "num_tokens"],
+                     ["s_ent_name", "num_tokens"],
+                     ["t_ent_name", "num_tokens"]],
+    "batch_size": 16
+  },
   "trainer": {
     "optimizer": "adam",
     "num_epochs": 50,
-    "patience": 3,
-    "cuda_device": -1
+    "patience": 8,
+    "cuda_device": 5
   }
 }
