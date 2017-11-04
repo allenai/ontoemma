@@ -56,7 +56,7 @@ def main(argv):
             sys.stdout.write('-p <model_type>')
             sys.stdout.write('Example usage: \n')
             sys.stdout.write(
-                '  ./OntoEmmaWrapper.py -s source_ont.json -t target_ont.json -i gold_alignment.tsv -o generated_alignment.tsv -m model_serialization_dir -p nn\n'
+                '  ./run_ontoemma.py -s source_ont.json -t target_ont.json -i gold_alignment.tsv -o generated_alignment.tsv -m model_serialization_dir -p nn\n'
             )
             sys.stdout.write('-------------------------\n')
             sys.stdout.write('Accepted KB file formats: json, pickle, owl\n')
@@ -100,8 +100,9 @@ def main(argv):
     if source_ont_file is not None and target_ont_file is not None:
         matcher = OntoEmma()
         matcher.align(
-            source_ont_file, target_ont_file, input_alignment_file,
-            output_alignment_file, model_path, model_type
+            model_type, model_path,
+            source_ont_file, target_ont_file,
+            input_alignment_file, output_alignment_file
         )
 
 

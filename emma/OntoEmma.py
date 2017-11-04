@@ -1,15 +1,20 @@
 import os
 import sys
 import csv
-import time
+import json
+import tqdm
 import itertools
 import requests
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from emma.utils import file_util
-from emma.OntoEmmaModel import OntoEmmaModel
+from allennlp.commands.train import train_model_from_file
+
+from allennlp.models.archival import load_archive
+from allennlp.service.predictors import Predictor
+
+from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
@@ -20,11 +25,10 @@ import emma.constants as constants
 
 # class for training an ontology matcher and aligning input ontologies
 class OntoEmma:
-    def __init__(self, missed_file=None):
+    def __init__(self):
 
         paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
         self.kb_dir = paths.ontoemma_kb_dir
-        self.missed_file = missed_file if missed_file else paths.ontoemma_missed_file
 
         self.kb_file_paths = dict()
         self.kb_pairs = set([])
@@ -115,6 +119,25 @@ class OntoEmma:
         return mappings
 
     @staticmethod
+    def _load_alignment_from_json(gold_path):
+        """
+        Parse alignments from json gold alignment file path.
+        :param gold_path: path to gold alignment file
+        :return:
+        """
+        mappings = []
+
+        # open data file and read lines
+        with open(gold_path, 'r') as f:
+            for line in tqdm.tqdm(f):
+                dataline = json.loads(line)
+                s_ent = dataline['source_ent']
+                t_ent = dataline['target_ent']
+                label = dataline['label']
+                mappings.append((s_ent['research_entity_id'], t_ent['research_entity_id'], float(label)))
+        return mappings
+
+    @staticmethod
     def _load_alignment_from_rdf(gold_path):
         """
         Parse alignments from rdf gold alignment file path
@@ -159,21 +182,53 @@ class OntoEmma:
         elif fext == '.rdf':
             return self._load_alignment_from_rdf(gold_path)
         else:
-            raise NotImplementedError(
-                "Unknown input alignment file type. Cannot parse."
-            )
+            try:
+                return self._load_alignment_from_json(gold_path)
+            except:
+                raise NotImplementedError(
+                    "Unknown input alignment file type. Cannot parse."
+                )
 
     def train(
-        self, model_path, training_data_path, dev_data_path
+        self, model_type: str, model_path: str, config_file: str
     ):
         """
         Train model
+        :param model_type: type of model (nn, lr etc)
         :param model_path: path to ontoemma model
-        :param training_data_path: path to training data set
-        :param dev_data_path: path to development data set
+        :param config_file: path to training data, dev data, config for nn
         :return:
         """
-        model = OntoEmmaModel()
+        assert model_type in constants.IMPLEMENTED_MODEL_TYPES
+        assert config_file is not None
+        assert os.path.exists(config_file)
+
+        if model_type == "nn":
+            sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
+
+            # import allennlp ontoemma classes (to register)
+            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+
+            # train allennlp model
+            train_model_from_file(config_file, model_path)
+
+            sys.stdout.write("done.\n")
+            return
+
+        # create model
+        if model_type == "lr":
+            model = OntoEmmaLRModel()
+        else:
+            raise (NotImplementedError, "Unknown model type")
+
+        # read model config
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+
+        # parse parameters
+        training_data_path = config['train_data_path']
+        dev_data_path = config['validation_data_path']
 
         # load training data
         training_data = self.load_alignment(training_data_path)
@@ -194,6 +249,7 @@ class OntoEmma:
         sys.stdout.write('Training data size: %i\n' % len(training_data))
         sys.stdout.write('Development data size: %i\n' % len(dev_data))
 
+        # initialize KBs
         s_kb = KnowledgeBase()
         t_kb = KnowledgeBase()
 
@@ -262,67 +318,145 @@ class OntoEmma:
         )
 
         model.save(model_path)
+
         return
 
-    def align(self, s_kb_path, t_kb_path, gold_path, output_path, model_path, model_type):
+    def _align_lr(self, model_path, source_kb, target_kb, candidate_selector, feature_generator):
         """
-        Align two input ontologies
-        :param s_kb_path: path to source KB
-        :param t_kb_path: path to target KB
-        :param gold_path: path to gold alignment between source and target KBs
-        :param output_path: path to write output alignment
-        :param model_path: path to ontoemma model
-        :param model_type: type of model
+        Align using logistic regression model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :param feature_generator:
         :return:
         """
-        sys.stdout.write("Loading KBs...\n")
-        s_kb = self.load_kb(s_kb_path)
-        t_kb = self.load_kb(t_kb_path)
+        # Initialize
+        alignment = []
 
         sys.stdout.write("Loading model...\n")
-        model = OntoEmmaModel()
+        model = OntoEmmaLRModel()
         model.load(model_path)
 
-        sys.stdout.write("Building candidate indices...\n")
-        cand_sel = CandidateSelection(s_kb, t_kb)
-        feat_gen = FeatureGenerator(s_kb, t_kb)
-
         sys.stdout.write("Making predictions...\n")
-        alignment = []
-        for index, s_ent in enumerate(s_kb.entities):
+
+        for index, s_ent in enumerate(source_kb.entities):
             # show progress to user so that they feel good.
             if index == 1:
                 sys.stdout.write('\n')
             if index % 10 == 1:
                 sys.stdout.write('\rpredicted alignments for {} out of {} source entities.'.format(
-                    index, len(s_kb.entities)))
+                    index, len(source_kb.entities)))
             s_ent_id = s_ent.research_entity_id
-            for t_ent_id in cand_sel.select_candidates(
-                s_ent_id
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent_id
             )[:constants.KEEP_TOP_K_CANDIDATES]:
-                features = [feat_gen.calculate_features(s_ent_id, t_ent_id)]
+                features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
                 score = model.predict_entity_pair(features)
                 if score[0][1] >= constants.SCORE_THRESHOLD:
                     alignment.append((s_ent_id, t_ent_id, score[0][1]))
 
-        alignment_scores = (None, None, None)
+        return alignment
+
+    def _form_json_entity(self, ent):
+        """
+        Return json representation of entity
+        :param ent:
+        :return:
+        """
+        return {
+                    'research_entity_id': ent.research_entity_id,
+                    'canonical_name': ent.canonical_name,
+                    'aliases': ent.aliases,
+                    'definition': ent.definition,
+                    'other_contexts': ent.other_contexts
+                }
+
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector):
+        """
+        Align using neural network model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :return:
+        """
+        alignment = []
+
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+        from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
+
+        archive = load_archive(model_path)
+        predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
+
+        # create iterator for candidate pairs
+        for s_ent in source_kb.entities:
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent.research_entity_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                json_data = {
+                    'source_ent': self._form_json_entity(s_ent),
+                    'target_ent': self._form_json_entity(t_ent),
+                    'label': 0
+                }
+                result = predictor.predict_json(json_data)
+                if result['predicted_label'] == [1.0]:
+                    sys.stdout.write('Predicted alignment between %s and %s.\n' % (
+                        s_ent.canonical_name, t_ent.canonical_name
+                    ))
+                    alignment.append((s_ent.research_entity_id, t_ent_id, 1.0))
+        return alignment
+
+    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, missed_path=None):
+        """
+        Align two input ontologies
+        :param model_type: type of model
+        :param model_path: path to ontoemma model
+        :param s_kb_path: path to source KB
+        :param t_kb_path: path to target KB
+        :param gold_path: path to gold alignment between source and target KBs
+        :param output_path: path to write output alignment
+        :param missed_path: optional parameter for outputting missed alignments
+        :return:
+        """
+        alignment_scores = None
+
+        sys.stdout.write("Loading KBs...\n")
+        s_kb = self.load_kb(s_kb_path)
+        t_kb = self.load_kb(t_kb_path)
+
+        sys.stdout.write("Building candidate indices...\n")
+        cand_sel = CandidateSelection(s_kb, t_kb)
+
+        if model_type == 'lr':
+            feat_gen = FeatureGenerator(s_kb, t_kb)
+            alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel, feat_gen)
+        elif model_type == 'nn':
+            alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel)
+        else:
+            raise(NotImplementedError, "Model type has not been implemented.")
+
+        if missed_path is None and output_path is not None:
+            missed_path = output_path + '.ontoemma.missed'
 
         if gold_path is not None and os.path.exists(gold_path):
             sys.stdout.write("Evaluating against gold standard...\n")
-            alignment_scores = self.evaluate_alignment(gold_path, alignment, s_kb, t_kb)
+            alignment_scores = self.evaluate_alignment(gold_path, alignment, s_kb, t_kb, missed_path)
 
         if output_path is not None:
             sys.stdout.write("Writing results to file...\n")
             self.write_alignment(output_path, alignment, s_kb_path, t_kb_path)
+
         return alignment_scores
 
-    def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb):
+    def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb, missed_file):
         """
         Make predictions on features and evaluate against gold
         :param gold_path: path to gold alignment file
         :param alignment: OntoEmma-produced alignment
         :param s_kb: source kb
         :param t_kb: target kb
+        :param missed_file: file to write missed data
         :return:
         """
         gold_positives = set(
@@ -346,27 +480,37 @@ class OntoEmma:
 
         missed = gold_positives.difference(alignment_positives)
 
-        with open(self.missed_file, 'w') as outf:
-            for s_ent, t_ent in missed:
+        if missed_file:
+            dir_name, file_name = os.path.split(missed_file)
+            if not os.path.exists(dir_name):
                 try:
-                    s_names = s_kb.get_entity_by_research_entity_id(
-                        s_ent
-                    ).aliases
-                    t_names = t_kb.get_entity_by_research_entity_id(
-                        t_ent
-                    ).aliases
-                    outf.write(
-                        '%s\t%s\t%s\t%s\n' % (
-                            s_ent, t_ent, ','.join(s_names),
-                            ','.join(t_names)
-                        )
+                    os.makedirs(dir_name)
+                except OSError:
+                    raise(
+                        OSError,
+                        "Missed file directory does not exist and OntoEmma cannot make it.\n"
                     )
-                except AttributeError:
-                    outf.write('%s\t%s\t%s\t%s\n' % (s_ent, t_ent, '', ''))
+            with open(missed_file, 'w') as outf:
+                for s_ent, t_ent in missed:
+                    try:
+                        s_names = s_kb.get_entity_by_research_entity_id(
+                            s_ent
+                        ).aliases
+                        t_names = t_kb.get_entity_by_research_entity_id(
+                            t_ent
+                        ).aliases
+                        outf.write(
+                            '%s\t%s\t%s\t%s\n' % (
+                                s_ent, t_ent, ','.join(s_names),
+                                ','.join(t_names)
+                            )
+                        )
+                    except AttributeError:
+                        outf.write('%s\t%s\t%s\t%s\n' % (s_ent, t_ent, '', ''))
 
-        precision = None
-        recall = None
-        f1_score = None
+        precision = 0.0
+        recall = 0.0
+        f1_score = 0.0
 
         if len(alignment_positives) > 0:
             precision = len(alignment_positives.intersection(gold_positives)
@@ -376,12 +520,9 @@ class OntoEmma:
             if precision + recall > 0.0:
                 f1_score = (2 * precision * recall / (precision + recall))
 
-        if precision:
-            sys.stdout.write('Precision: %.2f\n' % precision)
-        if recall:
-            sys.stdout.write('Recall: %.2f\n' % recall)
-        if f1_score:
-            sys.stdout.write('F1-score: %.2f\n' % f1_score)
+        sys.stdout.write('Precision: %.2f\n' % precision)
+        sys.stdout.write('Recall: %.2f\n' % recall)
+        sys.stdout.write('F1-score: %.2f\n' % f1_score)
 
         return precision, recall, f1_score
 
@@ -512,60 +653,3 @@ class OntoEmma:
             raise NotImplementedError(
                 "Unknown output file type. Cannot write alignment to file."
             )
-
-
-if __name__ == '__main__':
-    t = time.time()
-
-    matcher = OntoEmma()
-    args = sys.argv[1:]
-    mode = args[0]
-
-    if mode == 'train':
-        # training mode, training data specified
-        model_path = args[1]
-        training_data_path = args[2]
-        development_data_path = args[3]
-        matcher.train(
-            model_path, training_data_path, development_data_path
-        )
-    elif mode == 'align':
-        # alignment mode, source kb, target kb, gold alignment, and output file specified
-        model_path = args[1]
-        source_kb_path = args[2]
-        target_kb_path = args[3]
-        gold_file_path = None
-        output_file_path = None
-        if len(args) > 4:
-            gold_file_path = args[4]
-        if len(args) > 5:
-            output_file_path = args[5]
-        matcher.align(
-            model_path, source_kb_path, target_kb_path, gold_file_path,
-            output_file_path
-        )
-    elif mode == 'test':
-        # evaluate candidate selection
-        test_type = args[1]
-        source_kb_path = args[2]
-        target_kb_path = args[3]
-
-        if test_type == "eval_cs":
-            gold_file_path = args[4]
-            output_file_path = None
-            missed_data_file = None
-            if len(args) > 5:
-                output_file_path = args[5]
-            if len(args) > 6:
-                missed_data_file = args[6]
-            matcher.eval_cs(
-                source_kb_path, target_kb_path, gold_file_path, output_file_path, missed_data_file
-            )
-        else:
-            sys.stdout.write("Unknown test type, exiting...\n")
-    else:
-        sys.stdout.write('Unknown mode, exiting...\n')
-        sys.exit(1)
-
-    sys.stdout.write("Time taken: %f\n" % (time.time() - t))
-    sys.exit(0)

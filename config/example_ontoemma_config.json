@@ -11,14 +11,14 @@
       }
     }
   },
-  "train_data_path": "/Users/lucyw/corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.train",
-  "validation_data_path": "/Users/lucyw/corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.dev",
+  "train_data_path": "ontoemma.context.mini.train",
+  "validation_data_path": "ontoemma.context.mini.dev",
   "model": {
     "type": "ontoemmaNN",
     "name_text_field_embedder": {
             "tokens": {
                     "type": "embedding",
-                    "embedding_dim": 50
+                    "embedding_dim": 25
             },
             "token_characters": {
                     "type": "character_encoding",
@@ -28,22 +28,29 @@
                     "encoder": {
                       "type": "cnn",
                       "embedding_dim": 8,
-                      "num_filters": 50,
+                      "num_filters": 25,
                       "ngram_filter_sizes": [5]
                     },
                     "dropout": 0.2
             }
     },
+    "alias_text_field_embedder": {
+            "type": "list_embedder",
+            "tokens": {
+                    "type": "embedding",
+                    "embedding_dim": 50
+            }
+    },
     "name_rnn_encoder": {
       "type": "rnn",
-      "input_size": 100,
-      "hidden_size": 100,
-      "num_layers": 8,
+      "input_size": 50,
+      "hidden_size": 50,
+      "num_layers": 2,
       "dropout": 0.2,
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 200,
+      "input_dim": 100,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -57,11 +64,11 @@
       "dropout": [0.2, 0.0]
     }
   },
-  "iterator": {"type": "basic", "batch_size": 100},
+  "iterator": {"type": "basic", "batch_size": 50},
   "trainer": {
     "optimizer": "adam",
     "num_epochs": 50,
-    "patience": 10,
+    "patience": 8,
     "cuda_device": -1
   }
 }

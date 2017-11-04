@@ -15,7 +15,7 @@ from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 
-from boolean_field import BooleanField
+from emma.allennlp_classes.boolean_field import BooleanField
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -88,8 +88,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
         # tokenize names
-        s_name_tokens = self._tokenizer.tokenize(s_ent['canonical_name'].lower())
-        t_name_tokens = self._tokenizer.tokenize(t_ent['canonical_name'].lower())
+        s_name_tokens = self._tokenizer.tokenize('padding ' + s_ent['canonical_name'].lower())
+        t_name_tokens = self._tokenizer.tokenize('padding ' + t_ent['canonical_name'].lower())
 
         # add entity name fields
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
