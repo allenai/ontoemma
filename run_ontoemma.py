@@ -16,6 +16,7 @@ def main(argv):
     target_ont_file = None
     input_alignment_file = None
     output_alignment_file = None
+    cuda_device = -1
 
     sys.stdout.write('\n')
     sys.stdout.write('-------------------------\n')
@@ -39,7 +40,7 @@ def main(argv):
     try:
         # TODO(waleeda): use argparse instead of getopt to parse command line arguments.
         opts, args = getopt.getopt(
-            argv, "hs:t:i:o:m:p:", ["source=", "target=", "input=", "output=", "model_path=", "model_type="]
+            argv, "hs:t:i:o:m:p:g:", ["source=", "target=", "input=", "output=", "model_path=", "model_type=", "cuda_device="]
         )
     except getopt.GetoptError:
         sys.stdout.write('Unknown option... -h or --help for help.\n')
@@ -54,6 +55,7 @@ def main(argv):
             sys.stdout.write('-o <output_alignment_file>\n')
             sys.stdout.write('-m <model_location>\n')
             sys.stdout.write('-p <model_type>')
+            sys.stdout.write('-g <cuda_device>')
             sys.stdout.write('Example usage: \n')
             sys.stdout.write(
                 '  ./run_ontoemma.py -s source_ont.json -t target_ont.json -i gold_alignment.tsv -o generated_alignment.tsv -m model_serialization_dir -p nn\n'
@@ -94,6 +96,11 @@ def main(argv):
             else:
                 sys.stdout.write('Error: Unknown model type...\n')
                 sys.exit(1)
+        elif opt in ("-g", "--cuda_device"):
+            cuda_device = int(arg)
+            sys.stdout.write(
+                'Using CUDA device %i\n' % cuda_device
+            )
 
     sys.stdout.write('\n')
 
@@ -102,7 +109,8 @@ def main(argv):
         matcher.align(
             model_type, model_path,
             source_ont_file, target_ont_file,
-            input_alignment_file, output_alignment_file
+            input_alignment_file, output_alignment_file,
+            cuda_device
         )
 
 
