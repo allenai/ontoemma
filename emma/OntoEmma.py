@@ -9,11 +9,6 @@ from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from allennlp.commands.train import train_model_from_file
-
-from allennlp.models.archival import load_archive
-from allennlp.service.predictors import Predictor
-
 import torch
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
@@ -186,13 +181,14 @@ class OntoEmma:
                 )
 
     def train(
-        self, model_type: str, model_path: str, config_file: str
+        self, model_type: str, model_path: str, config_file: str, cuda_device: int
     ):
         """
         Train model
         :param model_type: type of model (nn, lr etc)
         :param model_path: path to ontoemma model
         :param config_file: path to training data, dev data, config for nn
+        :param cuda_device: GPU device number
         :return:
         """
         assert model_type in constants.IMPLEMENTED_MODEL_TYPES
@@ -202,13 +198,26 @@ class OntoEmma:
         if model_type == "nn":
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
+            from allennlp.commands.train import train_model_from_file
+
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
             from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
-            with torch.cuda.device(3):
-                # train allennlp model
+            with open(config_file) as json_data:
+                configuration = json.load(json_data)
+
+            if configuration['trainer']['cuda_device'] != cuda_device:
+                configuration['trainer']['cuda_device'] = cuda_device
+                with open(config_file, 'w') as outf:
+                    json.dump(configuration, outf)
+
+            if cuda_device >= 0:
+                with torch.cuda.device(cuda_device):
+                    # train allennlp model
+                    train_model_from_file(config_file, model_path)
+            else:
                 train_model_from_file(config_file, model_path)
 
             sys.stdout.write("done.\n")
@@ -319,6 +328,54 @@ class OntoEmma:
 
         return
 
+    def evaluate(self, model_path: str, evaluation_data_file: str, cuda_device: int):
+        """
+        Evaluate trained model on some dataset specified in the config file
+        :param model_path:
+        :param config_file:
+        :param cuda_device: GPU device number
+        :return:
+        """
+        sys.stdout.write("Begin evaluation...\n")
+
+        assert os.path.exists(model_path)
+        assert evaluation_data_file is not None
+        assert os.path.exists(evaluation_data_file)
+
+        # import allennlp ontoemma classes (to register -- necessary, do not remove)
+        from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+
+        from allennlp.common.util import prepare_environment
+        from allennlp.data.dataset_readers.dataset_reader import DatasetReader
+        from allennlp.data.iterators import DataIterator
+        from allennlp.models.archival import load_archive
+        from allennlp.commands.evaluate import evaluate
+
+        # Load from archive
+        archive = load_archive(model_path, cuda_device)
+        config = archive.config
+        prepare_environment(config)
+        model = archive.model
+        model.eval()
+
+        # Load the evaluation data
+        dataset_reader = DatasetReader.from_params(config.pop('dataset_reader'))
+        evaluation_data_path = evaluation_data_file
+        dataset = dataset_reader.read(evaluation_data_path)
+        dataset.index_instances(model.vocab)
+
+        iterator = DataIterator.from_params(config.pop("iterator"))
+
+        metrics = evaluate(model, dataset, iterator, cuda_device)
+
+        sys.stdout.write('Metrics:\n')
+        for key, metric in metrics.items():
+            sys.stdout.write("%s: %s\n" % (key, metric))
+
+        sys.stdout.write("done.\n")
+
     def _align_lr(self, model_path, source_kb, target_kb, candidate_selector, feature_generator):
         """
         Align using logistic regression model
@@ -355,7 +412,8 @@ class OntoEmma:
 
         return alignment
 
-    def _form_json_entity(self, ent):
+    @staticmethod
+    def _form_json_entity(ent):
         """
         Return json representation of entity
         :param ent:
@@ -369,15 +427,31 @@ class OntoEmma:
                     'other_contexts': ent.other_contexts
                 }
 
-    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector):
+    def _candidate_pair_generator(self, source_kb, target_kb, candidate_selector):
+        for s_ent in source_kb.entities:
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent.research_entity_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                yield {
+                    'source_ent': self._form_json_entity(s_ent),
+                    'target_ent': self._form_json_entity(t_ent),
+                    'label': 0
+                }
+
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
         Align using neural network model
         :param source_kb:
         :param target_kb:
         :param candidate_selector:
+        :param cuda_device: GPU device number
         :return:
         """
         alignment = []
+
+        from allennlp.models.archival import load_archive
+        from allennlp.service.predictors import Predictor
 
         from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
@@ -388,25 +462,27 @@ class OntoEmma:
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
         # create iterator for candidate pairs
-        for s_ent in source_kb.entities:
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent.research_entity_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                json_data = {
-                    'source_ent': self._form_json_entity(s_ent),
-                    'target_ent': self._form_json_entity(t_ent),
-                    'label': 0
-                }
-                result = predictor.predict_json(json_data)
-                if result['predicted_label'] == [1.0]:
-                    sys.stdout.write('Predicted alignment between %s and %s.\n' % (
-                        s_ent.canonical_name, t_ent.canonical_name
-                    ))
-                    alignment.append((s_ent.research_entity_id, t_ent_id, 1.0))
+        cand_generator = self._candidate_pair_generator(source_kb, target_kb, candidate_selector)
+
+        # predict in batches
+        batch_json_data = []
+        for json_data in cand_generator:
+            batch_json_data.append(json_data)
+            if len(batch_json_data) == batch_size:
+                results = predictor.predict_batch_json(batch_json_data, cuda_device)
+                for model_input, output in zip(batch_json_data, results):
+                    if output['predicted_label'] == [1.0]:
+                        # sys.stdout.write('Predicted alignment between %s and %s.\n' % (
+                        #     model_input['source_ent']['canonical_name'], model_input['target_ent']['canonical_name']
+                        # ))
+                        alignment.append((model_input['source_ent']['research_entity_id'],
+                                          model_input['target_ent']['research_entity_id'],
+                                          1.0))
+                batch_json_data = []
+
         return alignment
 
-    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, missed_path=None):
+    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, cuda_device, missed_path=None):
         """
         Align two input ontologies
         :param model_type: type of model
@@ -415,6 +491,7 @@ class OntoEmma:
         :param t_kb_path: path to target KB
         :param gold_path: path to gold alignment between source and target KBs
         :param output_path: path to write output alignment
+        :param cuda_device: GPU device number
         :param missed_path: optional parameter for outputting missed alignments
         :return:
         """
@@ -431,7 +508,7 @@ class OntoEmma:
             feat_gen = FeatureGenerator(s_kb, t_kb)
             alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel, feat_gen)
         elif model_type == 'nn':
-            alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel)
+            alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
         else:
             raise(NotImplementedError, "Model type has not been implemented.")
 
