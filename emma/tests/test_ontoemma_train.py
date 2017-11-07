@@ -7,6 +7,7 @@ import unittest
 TEST_DATA = os.path.join('emma', 'tests', 'data')
 
 
+
 class TestOntoEmmaTrain(unittest.TestCase):
     def test_train_lr(self):
         config_file = os.path.join(TEST_DATA, 'test_lr_config_file.json')
