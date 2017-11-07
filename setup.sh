@@ -25,3 +25,9 @@ echo "Activating Conda Environment ----->"
 source ~/anaconda3/bin/activate ${CONDAENV}
 
 pip install -r requirements.txt
+
+if [[ $(uname) == "Darwin" ]]; then
+  conda install pytorch torchvision -c soumith
+else
+  conda install pytorch torchvision cuda80 -c soumith
+fi
