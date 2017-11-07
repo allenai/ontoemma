@@ -32,7 +32,7 @@ class UMLSExtractor(App):
     RELA: relation attribute
     """
 
-    paths = StandardFilePath(base_dir='/net/nfs.corp/s2-research/scigraph/data/')
+    paths = StandardFilePath()
 
     UMLS_DIR = paths.ontoemma_umls_subset_dir
     OUTPUT_DIR = paths.ontoemma_umls_output_dir
