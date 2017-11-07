@@ -12,10 +12,10 @@ import emma.constants as constants
 # class for generating features between entities of two KBs
 class FeatureGenerator:
     def __init__(self, s_kb: KnowledgeBase, t_kb: KnowledgeBase):
-        self.SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
-        self.PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 'part_of']
-        self.CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
-        self.SIBLING_REL_LABELS = ['SIB', 'RO']
+        self.SYNONYM_REL_LABELS = constants.UMLS_SYNONYM_REL_LABELS
+        self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
+        self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
+        self.SIBLING_REL_LABELS = constants.UMLS_SIBLING_REL_LABELS
 
         self.s_kb = s_kb
         self.t_kb = t_kb
