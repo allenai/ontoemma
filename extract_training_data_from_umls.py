@@ -571,7 +571,7 @@ class UMLSExtractor(App):
 
         self.umls_training_data = dict()
         mapping_files = glob.glob(
-            os.path.join(self.OUTPUT_DIR, 'training', '*.tsv')
+            os.path.join(self.OUTPUT_DIR, 'mappings', '*.tsv')
         )
         for fpath in mapping_files:
             if fpath not in done_list:
