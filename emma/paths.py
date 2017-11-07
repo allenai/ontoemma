@@ -1,5 +1,7 @@
 import os
 
+INIT_DIR = '/net/nfs.corp/s2-research/scigraph/data/'
+
 class StandardFilePath(object):
     ontoemma_root = 'ontoemma'
     ontoemma_kb_dir = 'kbs'
@@ -11,7 +13,7 @@ class StandardFilePath(object):
     ontoemma_output_root = 'output'
     ontoemma_missed_fname = 'missed.tsv'
 
-    def __init__(self, base_dir):
+    def __init__(self, base_dir=INIT_DIR):
         """Set self.base_dir.
         """
         self.base_dir = base_dir
