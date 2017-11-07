@@ -419,16 +419,16 @@ class UMLSExtractor(App):
                        for rel_id in ent.relation_ids
                        if kb.relations[rel_id].relation_type in constants.UMLS_SIBLING_REL_LABELS]
 
-        parents = [kb.get_entity_by_research_entity_id(i)
+        parents = [kb.get_entity_by_research_entity_id(i).canonical_name
                    for i in parent_ids if i in kb.research_entity_id_to_entity_index]
 
-        children = [kb.get_entity_by_research_entity_id(i)
+        children = [kb.get_entity_by_research_entity_id(i).canonical_name
                     for i in child_ids if i in kb.research_entity_id_to_entity_index]
 
-        synonyms = [kb.get_entity_by_research_entity_id(i)
+        synonyms = [kb.get_entity_by_research_entity_id(i).canonical_name
                     for i in synonym_ids if i in kb.research_entity_id_to_entity_index]
 
-        siblings = [kb.get_entity_by_research_entity_id(i)
+        siblings = [kb.get_entity_by_research_entity_id(i).canonical_name
                     for i in sibling_ids if i in kb.research_entity_id_to_entity_index]
 
         return {
@@ -449,6 +449,7 @@ class UMLSExtractor(App):
         :return:
         """
         all_kb_names = constants.TRAINING_KBS + constants.DEVELOPMENT_KBS
+        training_file_dir = os.path.join(self.OUTPUT_DIR, 'training')
 
         output_training_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.train')
         output_development_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.dev')
@@ -456,7 +457,7 @@ class UMLSExtractor(App):
 
         context_files = glob.glob(os.path.join(self.OUTPUT_KB_DIR, '*context.json'))
         context_kbs = [os.path.basename(f).split('-')[1] for f in context_files]
-        training_files = glob.glob(os.path.join(self.TRAINING_DIR, '*.tsv'))
+        training_files = glob.glob(os.path.join(training_file_dir, '*.tsv'))
         file_names = [os.path.splitext(os.path.basename(f))[0] for f in training_files]
 
         training_labels = []
