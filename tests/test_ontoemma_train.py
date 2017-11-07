@@ -4,7 +4,7 @@ import os
 import shutil
 import unittest
 
-TEST_DATA = os.path.join('emma', 'tests', 'data')
+TEST_DATA = os.path.join('tests', 'data')
 
 
 class TestOntoEmmaTrain(unittest.TestCase):
@@ -24,8 +24,6 @@ class TestOntoEmmaTrain(unittest.TestCase):
 
         lr_model = OntoEmmaLRModel()
         lr_model.load(model_path)
-
-
 
     def test_train_nn(self):
         config_file = os.path.join(TEST_DATA, 'test_nn_config_file.json')

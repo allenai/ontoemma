@@ -2,7 +2,7 @@ from emma.OntoEmma import OntoEmma
 import os
 import unittest
 
-TEST_DATA = os.path.join('emma', 'tests', 'data')
+TEST_DATA = os.path.join('tests', 'data')
 
 
 class TestOntoEmmaAlign(unittest.TestCase):

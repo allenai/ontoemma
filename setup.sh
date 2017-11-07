@@ -31,3 +31,8 @@ if [[ $(uname) == "Darwin" ]]; then
 else
   conda install pytorch torchvision cuda80 -c soumith
 fi
+
+python -m spacy download en
+
+python setup.py develop
+
