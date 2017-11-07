@@ -88,7 +88,7 @@ def main(argv):
     matcher = OntoEmma()
     if evaluate_flag:
         matcher.evaluate(
-            model_path, evaluation_data_file, cuda_device
+            model_type, model_path, evaluation_data_file, cuda_device
         )
     else:
         matcher.train(
