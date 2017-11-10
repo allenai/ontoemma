@@ -22,7 +22,7 @@ from emma.allennlp_classes.boolean_field import BooleanField
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-@DatasetReader.register("ontology_matcher")
+@DatasetReader.register("ontology_matcher_nocontext")
 class OntologyMatchingDatasetReader(DatasetReader):
     """
     Reads instances from a jsonlines file where each line is in the following format:
