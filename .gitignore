@@ -3,5 +3,7 @@ config/*
 .DS_Store
 .idea/*
 tests/.cache/*
+emma.egg-info/*
+emma/.cache/
 
 !config/example_ontoemma_config.json

@@ -1,4 +1,4 @@
-git+https://github.com/allenai/allennlp.git@5fd28f0f63d8ca96fc0931bebac8224fa071c35f#egg=allennlp
+git+https://github.com/allenai/allennlp.git@c47b073acf97155e4dfbbfa2e032ecf06f6fd659#egg=allennlp
 lxml==4.1.0
 django
 arrow==0.10.0
