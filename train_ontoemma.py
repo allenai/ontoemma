@@ -42,10 +42,10 @@ def main(argv):
             sys.stdout.write('Options: \n')
             sys.stdout.write('-c <configuration_file>\n')
             sys.stdout.write('-m <model_location>\n')
-            sys.stdout.write('-p <model_type>')
-            sys.stdout.write('-e # evaluation mode')
-            sys.stdout.write('-d <evaluation_data_file>')
-            sys.stdout.write('-g <cuda_device>')
+            sys.stdout.write('-p <model_type>\n')
+            sys.stdout.write('-e # evaluation mode\n')
+            sys.stdout.write('-d <evaluation_data_file>\n')
+            sys.stdout.write('-g <cuda_device>\n\n')
             sys.stdout.write('Example usages: \n')
             sys.stdout.write(
                 '  ./train_ontoemma.py -c configuration_file.json -m model_file_path -p nn -g 5\n'
