@@ -34,9 +34,6 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.distributed_context_embedder = BasicTextFieldEmbedder({
-            k: TimeDistributed(v) for k, v in context_text_field_embedder._token_embedders.items()
-        })
         self.name_rnn_encoder = name_rnn_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
@@ -67,8 +64,6 @@ class OntoEmmaNN(Model):
                 t_ent_aliases: Dict[str, torch.LongTensor],
                 s_ent_def: Dict[str, torch.LongTensor],
                 t_ent_def: Dict[str, torch.LongTensor],
-                s_ent_context: Dict[str, torch.LongTensor],
-                t_ent_context: Dict[str, torch.LongTensor],
                 s_ent_parents: Dict[str, torch.LongTensor],
                 t_ent_parents: Dict[str, torch.LongTensor],
                 s_ent_children: Dict[str, torch.LongTensor],
@@ -112,19 +107,6 @@ class OntoEmmaNN(Model):
         t_ent_def_mask = get_text_field_mask(t_ent_def)
         encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
 
-        # embed and encode all contexts
-        embedded_s_ent_context = self.distributed_context_embedder(s_ent_context)
-        s_ent_context_mask = get_text_field_mask(s_ent_context)
-        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
-
-        embedded_t_ent_context = self.distributed_context_embedder(t_ent_context)
-        t_ent_context_mask = get_text_field_mask(t_ent_context)
-        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
-
-        # average contexts
-        average_encoded_s_ent_context = self._average_nonzero(encoded_s_ent_context)
-        average_encoded_t_ent_context = self._average_nonzero(encoded_t_ent_context)
-
         # embed and encode all parent relations
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
         s_ent_parents_mask = get_text_field_mask(s_ent_parents)
@@ -156,7 +138,6 @@ class OntoEmmaNN(Model):
             [encoded_s_ent_name,
              average_encoded_s_ent_aliases,
              encoded_s_ent_def,
-             average_encoded_s_ent_context,
              average_encoded_s_ent_parents,
              average_encoded_s_ent_children
              ],
@@ -165,7 +146,6 @@ class OntoEmmaNN(Model):
             [encoded_t_ent_name,
              average_encoded_t_ent_aliases,
              encoded_t_ent_def,
-             average_encoded_t_ent_context,
              average_encoded_t_ent_parents,
              average_encoded_t_ent_children
              ],
