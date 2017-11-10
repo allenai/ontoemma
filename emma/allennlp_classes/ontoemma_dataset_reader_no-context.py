@@ -128,19 +128,6 @@ class OntologyMatchingDatasetReader(DatasetReader):
             self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
         ) if t_ent['definition'] else self._empty_token_text_field
 
-        # add entity context fields
-        s_contexts = sample_n((s_ent['other_contexts'], 20))
-        t_contexts = sample_n((t_ent['other_contexts'], 20))
-
-        fields['s_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in s_contexts]
-        ) if s_contexts else self._empty_list_token_text_field
-        fields['t_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in t_contexts]
-        ) if t_contexts else self._empty_list_token_text_field
-
         # add parent relation fields
         s_parrels = sample_n((s_ent['par_relations'], 8))
         t_parrels = sample_n((t_ent['par_relations'], 8))
