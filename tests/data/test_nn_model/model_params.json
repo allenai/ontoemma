@@ -1,0 +1,88 @@
+{
+    "dataset_reader": {
+        "type": "ontology_matcher",
+        "name_token_indexers": {
+            "tokens": {
+                "type": "single_id",
+                "lowercase_tokens": true
+            },
+            "token_characters": {
+                "type": "characters"
+            }
+        }
+    },
+    "train_data_path": "tests/data/test.ontoemma.micro.train",
+    "validation_data_path": "tests/data/test.ontoemma.micro.dev",
+    "model": {
+        "type": "ontoemmaNN",
+        "name_text_field_embedder": {
+            "tokens": {
+                "type": "embedding",
+                "embedding_dim": 25
+            },
+            "token_characters": {
+                "type": "character_encoding",
+                "embedding": {
+                    "embedding_dim": 8
+                },
+                "encoder": {
+                    "type": "cnn",
+                    "embedding_dim": 8,
+                    "num_filters": 25,
+                    "ngram_filter_sizes": [
+                        5
+                    ]
+                },
+                "dropout": 0.2
+            }
+        },
+        "alias_text_field_embedder": {
+            "type": "list_embedder",
+            "tokens": {
+                "type": "embedding",
+                "embedding_dim": 50
+            }
+        },
+        "name_rnn_encoder": {
+            "type": "rnn",
+            "input_size": 50,
+            "hidden_size": 50,
+            "num_layers": 2,
+            "dropout": 0.2,
+            "bidirectional": true
+        },
+        "siamese_feedforward": {
+            "input_dim": 100,
+            "num_layers": 2,
+            "hidden_dims": 100,
+            "activations": "relu",
+            "dropout": 0.2
+        },
+        "decision_feedforward": {
+            "input_dim": 200,
+            "num_layers": 2,
+            "hidden_dims": [
+                200,
+                1
+            ],
+            "activations": [
+                "relu",
+                "linear"
+            ],
+            "dropout": [
+                0.2,
+                0.0
+            ]
+        }
+    },
+    "iterator": {
+        "type": "basic",
+        "batch_size": 50
+    },
+    "trainer": {
+        "optimizer": "adam",
+        "num_epochs": 50,
+        "patience": 8,
+        "cuda_device": -1
+    }
+}
