@@ -315,7 +315,6 @@ class OntoEmma:
 
         if model_type == "nn":
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
@@ -541,7 +540,6 @@ class OntoEmma:
         from allennlp.models.archival import load_archive
         from allennlp.service.predictors import Predictor
 
-        from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
