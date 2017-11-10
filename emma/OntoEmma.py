@@ -190,7 +190,7 @@ class OntoEmma:
                 )
 
     def train(
-        self, model_type: str, model_path: str, config_file: str, cuda_device: int
+        self, model_type: str, model_path: str, config_file: str, cuda_device: int = -1
     ):
         """
         Train model
@@ -209,7 +209,6 @@ class OntoEmma:
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
@@ -508,7 +507,11 @@ class OntoEmma:
                     'canonical_name': ent.canonical_name,
                     'aliases': ent.aliases,
                     'definition': ent.definition,
-                    'other_contexts': ent.other_contexts
+                    'other_contexts': ent.other_contexts,
+                    'par_relations': [],
+                    'chd_relations': [],
+                    'syn_relations': [],
+                    'sib_relations': []
                 }
 
     def _candidate_pair_generator(self, source_kb, target_kb, candidate_selector):
@@ -562,7 +565,7 @@ class OntoEmma:
 
         return alignment
 
-    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, cuda_device, missed_path=None):
+    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, cuda_device=-1, missed_path=None):
         """
         Align two input ontologies
         :param model_type: type of model
