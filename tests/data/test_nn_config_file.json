@@ -40,21 +40,7 @@
                     "dropout": 0.2
             }
     },
-    "alias_text_field_embedder": {
-            "type": "list_embedder",
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
-    "definition_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
     "context_text_field_embedder": {
-            "type": "list_embedder",
             "tokens": {
                     "type": "embedding",
                     "embedding_dim": 50
@@ -62,14 +48,6 @@
     },
     "name_rnn_encoder": {
       "type": "rnn",
-      "input_size": 50,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
-    },
-    "definition_encoder": {
-      "type": "lstm",
       "input_size": 50,
       "hidden_size": 50,
       "num_layers": 2,
@@ -85,7 +63,7 @@
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 400,
+      "input_dim": 600,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -99,10 +77,26 @@
       "dropout": [0.2, 0.0]
     }
   },
-  "iterator": {"type": "basic", "batch_size": 32},
+  "iterator": {
+    "type": "bucket",
+    "sorting_keys": [
+                     ["s_ent_context", "list_num_tokens"],
+                     ["t_ent_context", "list_num_tokens"],
+                     ["s_ent_def", "num_tokens"],
+                     ["t_ent_def", "num_tokens"],
+                     ["s_ent_aliases", "list_num_tokens"],
+                     ["t_ent_aliases", "list_num_tokens"],
+                     ["s_ent_parents", "list_num_tokens"],
+                     ["t_ent_parents", "list_num_tokens"],
+                     ["s_ent_children", "list_num_tokens"],
+                     ["t_ent_children", "list_num_tokens"],
+                     ["s_ent_name", "num_tokens"],
+                     ["t_ent_name", "num_tokens"]],
+    "batch_size": 16
+  },
   "trainer": {
     "optimizer": "adam",
-    "num_epochs": 5,
+    "num_epochs": 10,
     "patience": 5,
     "cuda_device": -1
   }
