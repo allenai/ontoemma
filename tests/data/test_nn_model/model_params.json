@@ -9,6 +9,12 @@
             "token_characters": {
                 "type": "characters"
             }
+        },
+        "token_only_indexer": {
+            "tokens": {
+                "type": "single_id",
+                "lowercase_tokens": true
+            }
         }
     },
     "train_data_path": "tests/data/test.ontoemma.micro.train",
@@ -36,8 +42,7 @@
                 "dropout": 0.2
             }
         },
-        "alias_text_field_embedder": {
-            "type": "list_embedder",
+        "context_text_field_embedder": {
             "tokens": {
                 "type": "embedding",
                 "embedding_dim": 50
@@ -51,8 +56,16 @@
             "dropout": 0.2,
             "bidirectional": true
         },
+        "context_encoder": {
+            "type": "lstm",
+            "input_size": 50,
+            "hidden_size": 50,
+            "num_layers": 2,
+            "dropout": 0.2,
+            "bidirectional": true
+        },
         "siamese_feedforward": {
-            "input_dim": 100,
+            "input_dim": 600,
             "num_layers": 2,
             "hidden_dims": 100,
             "activations": "relu",
@@ -76,13 +89,63 @@
         }
     },
     "iterator": {
-        "type": "basic",
-        "batch_size": 50
+        "type": "bucket",
+        "sorting_keys": [
+            [
+                "s_ent_context",
+                "list_num_tokens"
+            ],
+            [
+                "t_ent_context",
+                "list_num_tokens"
+            ],
+            [
+                "s_ent_def",
+                "num_tokens"
+            ],
+            [
+                "t_ent_def",
+                "num_tokens"
+            ],
+            [
+                "s_ent_aliases",
+                "list_num_tokens"
+            ],
+            [
+                "t_ent_aliases",
+                "list_num_tokens"
+            ],
+            [
+                "s_ent_parents",
+                "list_num_tokens"
+            ],
+            [
+                "t_ent_parents",
+                "list_num_tokens"
+            ],
+            [
+                "s_ent_children",
+                "list_num_tokens"
+            ],
+            [
+                "t_ent_children",
+                "list_num_tokens"
+            ],
+            [
+                "s_ent_name",
+                "num_tokens"
+            ],
+            [
+                "t_ent_name",
+                "num_tokens"
+            ]
+        ],
+        "batch_size": 16
     },
     "trainer": {
         "optimizer": "adam",
-        "num_epochs": 50,
-        "patience": 8,
+        "num_epochs": 10,
+        "patience": 5,
         "cuda_device": -1
     }
 }
