@@ -15,7 +15,7 @@ from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
 from emma.allennlp_classes.boolean_f1 import BooleanF1
 
 
-@Model.register("ontoemmaNN")
+@Model.register("ontoemmaNN_nocontext")
 class OntoEmmaNN(Model):
 
     def __init__(self, vocab: Vocabulary,
