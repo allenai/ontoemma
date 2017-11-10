@@ -57,4 +57,3 @@ class TestOntoEmmaAlign(unittest.TestCase):
         assert p >= 0.8
         assert r >= 0.6
         assert f1 >= 0.7
-
