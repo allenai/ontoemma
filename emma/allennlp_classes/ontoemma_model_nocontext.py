@@ -55,6 +55,21 @@ class OntoEmmaNN(Model):
 
         return torch.stack(output_rows)
 
+    @staticmethod
+    def _get_max_sim(s_stack, t_stack):
+        max_vals = []
+        best_s = []
+        best_t = []
+
+        for s_entry, t_entry in zip(s_stack, t_stack):
+            vals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
+            mval, tidx = torch.max(vals, 0)
+            sidx = sidx[tidx]
+            max_vals.append(mval)
+            best_s.append(s_entry[sidx].squeeze())
+            best_t.append(t_entry[tidx].squeeze())
+
+        return torch.stack(max_vals, 0).squeeze(-1), torch.stack(best_s, 0), torch.stack(best_t, 0)
 
     @overrides
     def forward(self,  # type: ignore
@@ -85,6 +100,8 @@ class OntoEmmaNN(Model):
         t_ent_name_mask = get_text_field_mask(t_ent_name)
         encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
 
+        name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
+
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
@@ -94,9 +111,9 @@ class OntoEmmaNN(Model):
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_aliases = self._average_nonzero(encoded_s_ent_aliases)
-        average_encoded_t_ent_aliases = self._average_nonzero(encoded_t_ent_aliases)
+        alias_similarity, best_s_aliases, best_t_aliases = self._get_max_sim(
+            encoded_s_ent_aliases, encoded_t_ent_aliases
+        )
 
         # embed and encode all definitions
         embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
@@ -107,6 +124,8 @@ class OntoEmmaNN(Model):
         t_ent_def_mask = get_text_field_mask(t_ent_def)
         encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
 
+        def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
+
         # embed and encode all parent relations
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
         s_ent_parents_mask = get_text_field_mask(s_ent_parents)
@@ -116,9 +135,9 @@ class OntoEmmaNN(Model):
         t_ent_parents_mask = get_text_field_mask(t_ent_parents)
         encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_parents = self._average_nonzero(encoded_s_ent_parents)
-        average_encoded_t_ent_parents = self._average_nonzero(encoded_t_ent_parents)
+        par_similarity, best_s_parents, best_t_parents = self._get_max_sim(
+            encoded_s_ent_parents, encoded_t_ent_parents
+        )
 
         # embed and encode all child relations
         embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
@@ -129,25 +148,25 @@ class OntoEmmaNN(Model):
         t_ent_children_mask = get_text_field_mask(t_ent_children)
         encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_children = self._average_nonzero(encoded_s_ent_children)
-        average_encoded_t_ent_children = self._average_nonzero(encoded_t_ent_children)
+        chd_similarity, best_s_children, best_t_children = self._get_max_sim(
+            encoded_s_ent_children, encoded_t_ent_children
+        )
 
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
-             average_encoded_s_ent_aliases,
+             best_s_aliases,
              encoded_s_ent_def,
-             average_encoded_s_ent_parents,
-             average_encoded_s_ent_children
+             best_s_parents,
+             best_s_children
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
-             average_encoded_t_ent_aliases,
+             best_t_aliases,
              encoded_t_ent_def,
-             average_encoded_t_ent_parents,
-             average_encoded_t_ent_children
+             best_t_parents,
+             best_t_children
              ],
             dim=-1)
 
@@ -155,8 +174,18 @@ class OntoEmmaNN(Model):
         s_ent_output = self.siamese_feedforward(s_ent_input)
         t_ent_output = self.siamese_feedforward(t_ent_input)
 
+        # aggregate similarity metrics
+        aggregate_similarity = torch.stack(
+            [name_similarity,
+             alias_similarity,
+             def_similarity,
+             par_similarity,
+             chd_similarity
+             ], dim=-1
+        )
+
         # concatenate outputs
-        aggregate_input = torch.cat([s_ent_output, t_ent_output], dim=-1)
+        aggregate_input = torch.cat([aggregate_similarity, s_ent_output, t_ent_output], dim=-1)
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
