@@ -209,8 +209,8 @@ class OntoEmma:
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
 
             with open(config_file) as json_data:
                 configuration = json.load(json_data)
@@ -321,8 +321,8 @@ class OntoEmma:
 
         if model_type == "nn":
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
 
             # Load from archive
             archive = load_archive(model_path, cuda_device)
@@ -526,7 +526,7 @@ class OntoEmma:
                     'label': 0
                 }
 
-    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=256):
         """
         Align using neural network model
         :param source_kb:
@@ -535,33 +535,42 @@ class OntoEmma:
         :param cuda_device: GPU device number
         :return:
         """
+
         alignment = []
 
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        archive = load_archive(model_path)
+        archive = load_archive(model_path, cuda_device=cuda_device)
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
         # create iterator for candidate pairs
         cand_generator = self._candidate_pair_generator(source_kb, target_kb, candidate_selector)
+
+        # predict over one batch
+        def _run_predictor(batch_data, cuda_device):
+            results = predictor.predict_batch_json(batch_data, cuda_device)
+            pos_matches = []
+            for model_input, output in zip(batch_data, results):
+                if output['predicted_label'] == [1.0]:
+                    pos_matches.append((model_input['source_ent']['research_entity_id'],
+                                        model_input['target_ent']['research_entity_id'],
+                                        1.0))
+            return pos_matches
+
+        sys.stdout.write('Making predictions...\n')
 
         # predict in batches
         batch_json_data = []
         for json_data in cand_generator:
             batch_json_data.append(json_data)
             if len(batch_json_data) == batch_size:
-                results = predictor.predict_batch_json(batch_json_data, cuda_device)
-                for model_input, output in zip(batch_json_data, results):
-                    if output['predicted_label'] == [1.0]:
-                        # sys.stdout.write('Predicted alignment between %s and %s.\n' % (
-                        #     model_input['source_ent']['canonical_name'], model_input['target_ent']['canonical_name']
-                        # ))
-                        alignment.append((model_input['source_ent']['research_entity_id'],
-                                          model_input['target_ent']['research_entity_id'],
-                                          1.0))
+                alignment += _run_predictor(batch_json_data, cuda_device)
                 batch_json_data = []
+
+        if batch_json_data:
+            alignment += _run_predictor(batch_json_data, cuda_device)
 
         return alignment
 
