@@ -56,20 +56,33 @@ class OntoEmmaNN(Model):
         return torch.stack(output_rows)
 
     @staticmethod
-    def _get_max_sim(s_stack, t_stack):
+    def _get_sim(s_stack, t_stack):
+        """
+        Get max similarity and average similarity of each pair of corresponding entries from two ListFields
+        :param s_stack:
+        :param t_stack:
+        :return: max similarities, avg similarities, best field in s (max sim), best field in t (max sim)
+        """
         max_vals = []
+        avg_vals = []
         best_s = []
         best_t = []
 
         for s_entry, t_entry in zip(s_stack, t_stack):
-            vals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
-            mval, tidx = torch.max(vals, 0)
+            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
+            s_max, tidx = torch.max(s_maxvals, 0)
+            nonzero = torch.nonzero(s_maxvals.data).size()
+            if len(nonzero) > 0:
+                avg_vals.append(torch.sum(s_maxvals)/nonzero[0])
+            else:
+                avg_vals.append(s_maxvals[0])
             sidx = sidx[tidx]
-            max_vals.append(mval)
+            max_vals.append(s_max)
             best_s.append(s_entry[sidx].squeeze())
             best_t.append(t_entry[tidx].squeeze())
 
-        return torch.stack(max_vals, 0).squeeze(-1), torch.stack(best_s, 0), torch.stack(best_t, 0)
+        return torch.stack(max_vals, 0).squeeze(-1), torch.stack(avg_vals, 0).squeeze(-1), \
+               torch.stack(best_s, 0), torch.stack(best_t, 0)
 
     @overrides
     def forward(self,  # type: ignore
@@ -111,7 +124,7 @@ class OntoEmmaNN(Model):
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
-        alias_similarity, best_s_aliases, best_t_aliases = self._get_max_sim(
+        alias_max_similarity, alias_avg_similarity, best_s_aliases, best_t_aliases = self._get_sim(
             encoded_s_ent_aliases, encoded_t_ent_aliases
         )
 
@@ -135,7 +148,7 @@ class OntoEmmaNN(Model):
         t_ent_parents_mask = get_text_field_mask(t_ent_parents)
         encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
-        par_similarity, best_s_parents, best_t_parents = self._get_max_sim(
+        par_max_similarity, par_avg_similarity, best_s_parents, best_t_parents = self._get_sim(
             encoded_s_ent_parents, encoded_t_ent_parents
         )
 
@@ -148,7 +161,7 @@ class OntoEmmaNN(Model):
         t_ent_children_mask = get_text_field_mask(t_ent_children)
         encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
 
-        chd_similarity, best_s_children, best_t_children = self._get_max_sim(
+        chd_max_similarity, chd_avg_similarity, best_s_children, best_t_children = self._get_sim(
             encoded_s_ent_children, encoded_t_ent_children
         )
 
@@ -177,10 +190,13 @@ class OntoEmmaNN(Model):
         # aggregate similarity metrics
         aggregate_similarity = torch.stack(
             [name_similarity,
-             alias_similarity,
+             alias_max_similarity,
+             alias_avg_similarity,
              def_similarity,
-             par_similarity,
-             chd_similarity
+             par_max_similarity,
+             par_avg_similarity,
+             chd_max_similarity,
+             chd_avg_similarity
              ], dim=-1
         )
 
