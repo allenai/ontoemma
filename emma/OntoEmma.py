@@ -553,7 +553,7 @@ class OntoEmma:
         cand_generator = self._candidate_pair_generator(source_kb, target_kb, candidate_selector)
 
         # predict over one batch
-        def _run_predictor(batch_data, cuda_device):
+        def _run_predictor_batch(batch_data, cuda_device):
             results = predictor.predict_batch_json(batch_data, cuda_device)
             pos_matches = []
             for model_input, output in zip(batch_data, results):
@@ -565,17 +565,24 @@ class OntoEmma:
 
         sys.stdout.write('Making predictions...\n')
 
-        # predict in batches
-        batch_json_data = []
-        for json_data in cand_generator:
-            batch_json_data.append(json_data)
-            if len(batch_json_data) == batch_size:
-                alignment += _run_predictor(batch_json_data, cuda_device)
-                batch_json_data = []
+        if cuda_device >= 0:
+            # predict in batches
+            batch_json_data = []
+            for json_data in cand_generator:
+                batch_json_data.append(json_data)
+                if len(batch_json_data) == batch_size:
+                    alignment += _run_predictor_batch(batch_json_data, cuda_device)
+                    batch_json_data = []
 
-        if batch_json_data:
-            alignment += _run_predictor(batch_json_data, cuda_device)
-
+            if batch_json_data:
+                alignment += _run_predictor_batch(batch_json_data, cuda_device)
+        else:
+            for json_data in cand_generator:
+                output = predictor.predict_json(json_data, cuda_device)
+                if output['predicted_label'] == [1.0]:
+                    alignment.append((json_data['source_ent']['research_entity_id'],
+                                      json_data['target_ent']['research_entity_id'],
+                                      1.0))
         return alignment
 
     def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, cuda_device=-1, missed_path=None):
