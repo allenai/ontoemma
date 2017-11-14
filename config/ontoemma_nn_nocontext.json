@@ -31,11 +31,11 @@
             "token_characters": {
                     "type": "character_encoding",
                     "embedding": {
-                      "embedding_dim": 8
+                      "embedding_dim": 50
                     },
                     "encoder": {
                       "type": "cnn",
-                      "embedding_dim": 8,
+                      "embedding_dim": 50,
                       "num_filters": 50,
                       "ngram_filter_sizes": [5]
                     },
@@ -100,6 +100,6 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
-    "cuda_device": 6
+    "cuda_device": 7
   }
 }
