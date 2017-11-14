@@ -34,9 +34,6 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.distributed_context_embedder = BasicTextFieldEmbedder({
-            k: TimeDistributed(v) for k, v in context_text_field_embedder._token_embedders.items()
-        })
         self.name_rnn_encoder = name_rnn_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
@@ -48,16 +45,49 @@ class OntoEmmaNN(Model):
         initializer(self)
 
     @staticmethod
-    def _average_nonzero(t_stack):
-        output_rows = []
-        for row in t_stack:
-            if row.sum().data[0] == 0.0:
-                output_rows.append(row[0])
+    def _get_max_sim(s_stack, t_stack):
+        """
+        Get max similarity of each pair of corresponding entries from two ListFields
+        :param s_stack:
+        :param t_stack:
+        :return: max similarities, best field in s (max sim), best field in t (max sim)
+        """
+        max_vals = []
+        best_s = []
+        best_t = []
+
+        for s_entry, t_entry in zip(s_stack, t_stack):
+            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
+            if s_maxvals.dim() == 1:
+                s_max = torch.max(s_maxvals)
+                tidx = 0
             else:
-                output_rows.append(row.sum(0) / ((row.sum(1) != 0.0).sum().data[0]))
+                s_max, tidx = torch.max(s_maxvals, 1)
+            sidx = sidx.squeeze()[tidx]
+            max_vals.append(s_max)
+            best_s.append(s_entry[sidx].squeeze())
+            best_t.append(t_entry[tidx].squeeze())
 
-        return torch.stack(output_rows)
+        return torch.stack(max_vals, 0).squeeze(-1), \
+               torch.stack(best_s, 0), torch.stack(best_t, 0)
 
+    @staticmethod
+    def _get_avg(stack):
+        """
+        Compute average over non-zero entries
+        :param stack:
+        :return:
+        """
+        avg_vec = []
+        for entry in stack:
+            sums = torch.sum(entry, 1)
+            nonzero = torch.nonzero(sums.data).size()
+            if len(nonzero) > 0:
+                avg_vec.append(torch.sum(entry, 0) / nonzero[0])
+            else:
+                avg_vec.append(entry[0])
+
+        return torch.stack(avg_vec, 0)
 
     @overrides
     def forward(self,  # type: ignore
@@ -90,6 +120,8 @@ class OntoEmmaNN(Model):
         t_ent_name_mask = get_text_field_mask(t_ent_name)
         encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
 
+        name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
+
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
@@ -99,9 +131,9 @@ class OntoEmmaNN(Model):
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_aliases = self._average_nonzero(encoded_s_ent_aliases)
-        average_encoded_t_ent_aliases = self._average_nonzero(encoded_t_ent_aliases)
+        alias_max_similarity, best_s_aliases, best_t_aliases = self._get_max_sim(
+            encoded_s_ent_aliases, encoded_t_ent_aliases
+        )
 
         # embed and encode all definitions
         embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
@@ -112,18 +144,23 @@ class OntoEmmaNN(Model):
         t_ent_def_mask = get_text_field_mask(t_ent_def)
         encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
 
+        def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
+
         # embed and encode all contexts
-        embedded_s_ent_context = self.distributed_context_embedder(s_ent_context)
+        embedded_s_ent_context = self.context_text_field_embedder(s_ent_context)
         s_ent_context_mask = get_text_field_mask(s_ent_context)
         encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
 
-        embedded_t_ent_context = self.distributed_context_embedder(t_ent_context)
+        embedded_t_ent_context = self.context_text_field_embedder(t_ent_context)
         t_ent_context_mask = get_text_field_mask(t_ent_context)
         encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
 
-        # average contexts
-        average_encoded_s_ent_context = self._average_nonzero(encoded_s_ent_context)
-        average_encoded_t_ent_context = self._average_nonzero(encoded_t_ent_context)
+        context_max_similarity, best_s_context, best_t_context = self._get_max_sim(
+            encoded_s_ent_context, encoded_t_ent_context
+        )
+
+        avg_s_context = self._get_avg(encoded_s_ent_context)
+        avg_t_context = self._get_avg(encoded_t_ent_context)
 
         # embed and encode all parent relations
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
@@ -134,9 +171,8 @@ class OntoEmmaNN(Model):
         t_ent_parents_mask = get_text_field_mask(t_ent_parents)
         encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_parents = self._average_nonzero(encoded_s_ent_parents)
-        average_encoded_t_ent_parents = self._average_nonzero(encoded_t_ent_parents)
+        avg_s_parents = self._get_avg(encoded_s_ent_parents)
+        avg_t_parents = self._get_avg(encoded_t_ent_parents)
 
         # embed and encode all child relations
         embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
@@ -147,27 +183,26 @@ class OntoEmmaNN(Model):
         t_ent_children_mask = get_text_field_mask(t_ent_children)
         encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
 
-        # average across non-zero entries
-        average_encoded_s_ent_children = self._average_nonzero(encoded_s_ent_children)
-        average_encoded_t_ent_children = self._average_nonzero(encoded_t_ent_children)
+        avg_s_children = self._get_avg(encoded_s_ent_children)
+        avg_t_children = self._get_avg(encoded_t_ent_children)
 
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
-             average_encoded_s_ent_aliases,
+             best_s_aliases,
              encoded_s_ent_def,
-             average_encoded_s_ent_context,
-             average_encoded_s_ent_parents,
-             average_encoded_s_ent_children
+             avg_s_context,
+             avg_s_parents,
+             avg_s_children
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
-             average_encoded_t_ent_aliases,
+             best_t_aliases,
              encoded_t_ent_def,
-             average_encoded_t_ent_context,
-             average_encoded_t_ent_parents,
-             average_encoded_t_ent_children
+             avg_t_context,
+             avg_t_parents,
+             avg_t_children
              ],
             dim=-1)
 
@@ -175,8 +210,17 @@ class OntoEmmaNN(Model):
         s_ent_output = self.siamese_feedforward(s_ent_input)
         t_ent_output = self.siamese_feedforward(t_ent_input)
 
+        # aggregate similarity metrics
+        aggregate_similarity = torch.stack(
+            [name_similarity,
+             alias_max_similarity,
+             def_similarity,
+             context_max_similarity
+             ], dim=-1
+        )
+
         # concatenate outputs
-        aggregate_input = torch.cat([s_ent_output, t_ent_output], dim=-1)
+        aggregate_input = torch.cat([aggregate_similarity, s_ent_output, t_ent_output], dim=-1)
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)

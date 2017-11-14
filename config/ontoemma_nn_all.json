@@ -17,8 +17,8 @@
       }
     }
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.dev",
   "model": {
     "type": "ontoemmaNN",
     "name_text_field_embedder": {
@@ -31,11 +31,11 @@
             "token_characters": {
                     "type": "character_encoding",
                     "embedding": {
-                      "embedding_dim": 8
+                      "embedding_dim": 50
                     },
                     "encoder": {
                       "type": "cnn",
-                      "embedding_dim": 8,
+                      "embedding_dim": 50,
                       "num_filters": 50,
                       "ngram_filter_sizes": [5]
                     },
@@ -74,7 +74,7 @@
       "dropout": 0.2
     },
     "decision_feedforward": {
-      "input_dim": 200,
+      "input_dim": 204,
       "num_layers": 2,
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],
@@ -102,6 +102,6 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
-    "cuda_device": -1
+    "cuda_device": 6
   }
 }

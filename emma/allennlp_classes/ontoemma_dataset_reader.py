@@ -59,10 +59,6 @@ class OntologyMatchingDatasetReader(DatasetReader):
         self._empty_list_token_text_field = ListField(
             [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
         )
-        self._empty_list_chartoken_text_field = ListField(
-            [TextField(self._tokenizer.tokenize('00000'), self._name_token_indexers)]
-        )
-
 
     @overrides
     def read(self, file_path):
@@ -94,8 +90,15 @@ class OntologyMatchingDatasetReader(DatasetReader):
                          t_ent: dict,
                          label: str = None) -> Instance:
 
-        # randomly sample from list, input: (given_list, sample_number)
-        sample_n = lambda l: l[0] if len(l[0]) <= l[1] else random.sample(l[0], l[1])
+        # sample n from list l, keeping only entries with len less than max_len
+        # if n is greater than the length of l, just return l
+        def sample_n(l, n, max_len):
+            l = [i for i in l if len(i) <= max_len]
+            if not l:
+                return ['00000']
+            if len(l) <= n:
+                return l
+            return random.sample(l, n)
 
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
@@ -107,8 +110,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
         fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
 
-        s_aliases = sample_n((s_ent['aliases'], 16))
-        t_aliases = sample_n((t_ent['aliases'], 16))
+        s_aliases = sample_n(s_ent['aliases'], 16, 128)
+        t_aliases = sample_n(t_ent['aliases'], 16, 128)
 
         # add entity alias fields
         fields['s_ent_aliases'] = ListField(
@@ -129,43 +132,43 @@ class OntologyMatchingDatasetReader(DatasetReader):
         ) if t_ent['definition'] else self._empty_token_text_field
 
         # add entity context fields
-        s_contexts = sample_n((s_ent['other_contexts'], 20))
-        t_contexts = sample_n((t_ent['other_contexts'], 20))
+        s_contexts = sample_n(s_ent['other_contexts'], 16, 256)
+        t_contexts = sample_n(t_ent['other_contexts'], 16, 256)
 
         fields['s_ent_context'] = ListField(
             [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
              for c in s_contexts]
-        ) if s_contexts else self._empty_list_token_text_field
+        )
         fields['t_ent_context'] = ListField(
             [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
              for c in t_contexts]
-        ) if t_contexts else self._empty_list_token_text_field
+        )
 
         # add parent relation fields
-        s_parrels = sample_n((s_ent['par_relations'], 8))
-        t_parrels = sample_n((t_ent['par_relations'], 8))
+        s_parrels = sample_n(s_ent['par_relations'], 8, 128)
+        t_parrels = sample_n(t_ent['par_relations'], 8, 128)
 
         fields['s_ent_parents'] = ListField(
             [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
              for i in s_parrels]
-        ) if s_parrels else self._empty_list_chartoken_text_field
+        )
         fields['t_ent_parents'] = ListField(
             [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
              for i in t_parrels]
-        ) if t_parrels else self._empty_list_chartoken_text_field
+        )
 
         # add child relation fields
-        s_chdrels = sample_n((s_ent['chd_relations'], 8))
-        t_chdrels = sample_n((t_ent['chd_relations'], 8))
+        s_chdrels = sample_n(s_ent['chd_relations'], 8, 128)
+        t_chdrels = sample_n(t_ent['chd_relations'], 8, 128)
 
         fields['s_ent_children'] = ListField(
             [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
              for i in s_chdrels]
-        ) if s_chdrels else self._empty_list_chartoken_text_field
+        )
         fields['t_ent_children'] = ListField(
             [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
              for i in t_chdrels]
-        ) if t_chdrels else self._empty_list_chartoken_text_field
+        )
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)

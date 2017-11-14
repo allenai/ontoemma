@@ -203,8 +203,8 @@ class OntoEmma:
             from allennlp.commands.train import train_model_from_file
 
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
             with open(config_file) as json_data:
                 configuration = json.load(json_data)
@@ -315,8 +315,8 @@ class OntoEmma:
 
         if model_type == "nn":
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
             from allennlp.common.util import prepare_environment
             from allennlp.data.dataset_readers.dataset_reader import DatasetReader
@@ -542,8 +542,8 @@ class OntoEmma:
         from allennlp.service.predictors import Predictor
         from allennlp.common.util import prepare_environment
 
-        from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
-        from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
         archive = load_archive(model_path, cuda_device=cuda_device)
@@ -573,9 +573,9 @@ class OntoEmma:
                 if len(batch_json_data) == batch_size:
                     alignment += _run_predictor_batch(batch_json_data, cuda_device)
                     batch_json_data = []
-
-            if batch_json_data:
-                alignment += _run_predictor_batch(batch_json_data, cuda_device)
+            # TODO: deal with last partial batch
+            # if batch_json_data:
+            #     alignment += _run_predictor_batch(batch_json_data, cuda_device)
         else:
             for json_data in cand_generator:
                 output = predictor.predict_json(json_data, cuda_device)
