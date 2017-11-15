@@ -223,11 +223,11 @@ class OntoEmmaNN(Model):
 
         sigmoid_output = self.sigmoid(decision_output)
 
-        # round sigmoid output to get prediction label
-        predicted_label = sigmoid_output.round()
-
         # build output dictionary
-        output_dict = {"predicted_label": predicted_label}
+        output_dict = dict()
+        output_dict["score"] = sigmoid_output
+        predicted_label = sigmoid_output.round()
+        output_dict["predicted_label"] = predicted_label
 
         if label is not None:
             # compute loss and accuracy
