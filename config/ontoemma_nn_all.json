@@ -50,21 +50,19 @@
                     "trainable": false
             }
     },
-    "name_rnn_encoder": {
-      "type": "rnn",
+    "name_encoder": {
+      "type": "boe",
       "input_size": 150,
-      "hidden_size": 50,
-      "num_layers": 2,
+      "embedding_size": 100,
       "dropout": 0.2,
-      "bidirectional": true
+      "average": true
     },
     "context_encoder": {
-      "type": "lstm",
+      "type": "boe",
       "input_size": 100,
-      "hidden_size": 50,
-      "num_layers": 2,
+      "embedding_size": 100,
       "dropout": 0.2,
-      "bidirectional": true
+      "average": true
     },
     "siamese_feedforward": {
       "input_dim": 600,

@@ -21,7 +21,7 @@ class OntoEmmaNN(Model):
     def __init__(self, vocab: Vocabulary,
                  name_text_field_embedder: TextFieldEmbedder,
                  context_text_field_embedder: TextFieldEmbedder,
-                 name_rnn_encoder: Seq2VecEncoder,
+                 name_encoder: Seq2VecEncoder,
                  context_encoder: Seq2VecEncoder,
                  siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
@@ -34,7 +34,7 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.name_rnn_encoder = name_rnn_encoder
+        self.name_encoder = name_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
@@ -131,9 +131,7 @@ class OntoEmmaNN(Model):
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
-        alias_max_similarity, best_s_aliases, best_t_aliases = self._get_max_sim(
-            encoded_s_ent_aliases, encoded_t_ent_aliases
-        )
+        alias_similarity = torch.diag(encoded_s_ent_aliases.mm(encoded_t_ent_aliases.t()), 0)
 
         # embed and encode all definitions
         embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
@@ -155,12 +153,7 @@ class OntoEmmaNN(Model):
         t_ent_context_mask = get_text_field_mask(t_ent_context)
         encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
 
-        context_max_similarity, best_s_context, best_t_context = self._get_max_sim(
-            encoded_s_ent_context, encoded_t_ent_context
-        )
-
-        avg_s_context = self._get_avg(encoded_s_ent_context)
-        avg_t_context = self._get_avg(encoded_t_ent_context)
+        context_similarity = torch.diag(encoded_s_ent_context.mm(encoded_t_ent_context.t()), 0)
 
         # embed and encode all parent relations
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
@@ -171,9 +164,6 @@ class OntoEmmaNN(Model):
         t_ent_parents_mask = get_text_field_mask(t_ent_parents)
         encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
-        avg_s_parents = self._get_avg(encoded_s_ent_parents)
-        avg_t_parents = self._get_avg(encoded_t_ent_parents)
-
         # embed and encode all child relations
         embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
         s_ent_children_mask = get_text_field_mask(s_ent_children)
@@ -183,26 +173,23 @@ class OntoEmmaNN(Model):
         t_ent_children_mask = get_text_field_mask(t_ent_children)
         encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
 
-        avg_s_children = self._get_avg(encoded_s_ent_children)
-        avg_t_children = self._get_avg(encoded_t_ent_children)
-
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
-             best_s_aliases,
+             encoded_s_ent_aliases,
              encoded_s_ent_def,
-             avg_s_context,
-             avg_s_parents,
-             avg_s_children
+             encoded_s_ent_context,
+             encoded_s_ent_parents,
+             encoded_s_ent_children
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
-             best_t_aliases,
+             encoded_t_ent_aliases,
              encoded_t_ent_def,
-             avg_t_context,
-             avg_t_parents,
-             avg_t_children
+             encoded_t_ent_context,
+             encoded_t_ent_parents,
+             encoded_t_ent_children
              ],
             dim=-1)
 
@@ -213,9 +200,9 @@ class OntoEmmaNN(Model):
         # aggregate similarity metrics
         aggregate_similarity = torch.stack(
             [name_similarity,
-             alias_max_similarity,
+             alias_similarity,
              def_similarity,
-             context_max_similarity
+             context_similarity
              ], dim=-1
         )
 
@@ -259,7 +246,7 @@ class OntoEmmaNN(Model):
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
         name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
         context_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("context_text_field_embedder"))
-        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
+        name_encoder = Seq2VecEncoder.from_params(params.pop("name_encoder"))
         context_encoder = Seq2VecEncoder.from_params(params.pop("context_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
@@ -274,7 +261,7 @@ class OntoEmmaNN(Model):
         return cls(vocab=vocab,
                    name_text_field_embedder=name_text_field_embedder,
                    context_text_field_embedder=context_text_field_embedder,
-                   name_rnn_encoder=name_rnn_encoder,
+                   name_encoder=name_encoder,
                    context_encoder=context_encoder,
                    siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
