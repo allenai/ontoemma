@@ -107,6 +107,7 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
+    "validation_metric": "+f1_score",
     "cuda_device": -1
   }
 }
