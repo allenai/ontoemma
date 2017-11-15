@@ -83,7 +83,7 @@
     "initializer": [
       [".*linear_layers.*weight", {"type": "xavier_normal"}],
       [".*embedder.*weight", {"type": "xavier_normal"}],
-      [".*encoder\._module\.weight.*", {"type": "orthogonal"}]
+      [".*encoder.*module.*weight.*", {"type": "orthogonal"}]
      ]
   },
   "iterator": {
@@ -107,6 +107,7 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
+    "validation_metric": "+f1_score",
     "cuda_device": -1
   }
 }
