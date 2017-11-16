@@ -17,8 +17,8 @@
       }
     }
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.dev",
   "model": {
     "type": "ontoemmaNN",
     "name_text_field_embedder": {
@@ -50,22 +50,26 @@
                     "trainable": false
             }
     },
-    "name_encoder": {
-      "type": "boe",
+    "name_rnn_encoder": {
+      "type": "rnn",
       "input_size": 150,
-      "embedding_dim": 100,
+      "hidden_size": 50,
+      "num_layers": 2,
       "dropout": 0.2,
-      "average": true
+      "bidirectional": true
+    },
+    "name_boe_encoder": {
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
     },
     "context_encoder": {
       "type": "boe",
-      "input_size": 100,
       "embedding_dim": 100,
-      "dropout": 0.2,
-      "average": true
+      "averaged": true
     },
     "siamese_feedforward": {
-      "input_dim": 600,
+      "input_dim": 400,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -93,10 +97,6 @@
                      ["t_ent_def", "num_tokens"],
                      ["s_ent_aliases", "list_num_tokens"],
                      ["t_ent_aliases", "list_num_tokens"],
-                     ["s_ent_parents", "list_num_tokens"],
-                     ["t_ent_parents", "list_num_tokens"],
-                     ["s_ent_children", "list_num_tokens"],
-                     ["t_ent_children", "list_num_tokens"],
                      ["s_ent_name", "num_tokens"],
                      ["t_ent_name", "num_tokens"]],
     "batch_size": 16
