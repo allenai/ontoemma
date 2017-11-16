@@ -114,22 +114,22 @@ class OntoEmmaNN(Model):
         # embed and encode entity names
         embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
         s_ent_name_mask = get_text_field_mask(s_ent_name)
-        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
+        encoded_s_ent_name = self.name_encoder(embedded_s_ent_name, s_ent_name_mask)
 
         embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
         t_ent_name_mask = get_text_field_mask(t_ent_name)
-        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
+        encoded_t_ent_name = self.name_encoder(embedded_t_ent_name, t_ent_name_mask)
 
         name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
 
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
-        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+        encoded_s_ent_aliases = TimeDistributed(self.name_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
-        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+        encoded_t_ent_aliases = TimeDistributed(self.name_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         alias_similarity = torch.diag(encoded_s_ent_aliases.mm(encoded_t_ent_aliases.t()), 0)
 
@@ -158,20 +158,20 @@ class OntoEmmaNN(Model):
         # embed and encode all parent relations
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
         s_ent_parents_mask = get_text_field_mask(s_ent_parents)
-        encoded_s_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_parents, s_ent_parents_mask)
+        encoded_s_ent_parents = TimeDistributed(self.name_encoder)(embedded_s_ent_parents, s_ent_parents_mask)
 
         embedded_t_ent_parents = self.distributed_name_embedder(t_ent_parents)
         t_ent_parents_mask = get_text_field_mask(t_ent_parents)
-        encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
+        encoded_t_ent_parents = TimeDistributed(self.name_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
         # embed and encode all child relations
         embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
         s_ent_children_mask = get_text_field_mask(s_ent_children)
-        encoded_s_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_children, s_ent_children_mask)
+        encoded_s_ent_children = TimeDistributed(self.name_encoder)(embedded_s_ent_children, s_ent_children_mask)
 
         embedded_t_ent_children = self.distributed_name_embedder(t_ent_children)
         t_ent_children_mask = get_text_field_mask(t_ent_children)
-        encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
+        encoded_t_ent_children = TimeDistributed(self.name_encoder)(embedded_t_ent_children, t_ent_children_mask)
 
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(

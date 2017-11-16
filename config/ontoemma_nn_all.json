@@ -53,14 +53,14 @@
     "name_encoder": {
       "type": "boe",
       "input_size": 150,
-      "embedding_size": 100,
+      "embedding_dim": 100,
       "dropout": 0.2,
       "average": true
     },
     "context_encoder": {
       "type": "boe",
       "input_size": 100,
-      "embedding_size": 100,
+      "embedding_dim": 100,
       "dropout": 0.2,
       "average": true
     },
