@@ -80,22 +80,22 @@ class OntoEmmaNN(Model):
         # embed and encode entity names
         embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
         s_ent_name_mask = get_text_field_mask(s_ent_name)
-        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
+        encoded_s_ent_name = self.name_encoder(embedded_s_ent_name, s_ent_name_mask)
 
         embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
         t_ent_name_mask = get_text_field_mask(t_ent_name)
-        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
+        encoded_t_ent_name = self.name_encoder(embedded_t_ent_name, t_ent_name_mask)
 
         name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
 
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
-        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+        encoded_s_ent_aliases = TimeDistributed(self.name_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
-        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+        encoded_t_ent_aliases = TimeDistributed(self.name_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         # average across non-zero entries
         average_encoded_s_ent_aliases = self._average_nonzero(encoded_s_ent_aliases)
