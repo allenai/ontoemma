@@ -103,8 +103,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
         # tokenize names
-        s_name_tokens = self._tokenizer.tokenize('00000 ' + s_ent['canonical_name'])
-        t_name_tokens = self._tokenizer.tokenize('00000 ' + t_ent['canonical_name'])
+        s_name_tokens = self._tokenizer.tokenize('00000 00000 00000 00000 ' + s_ent['canonical_name'])
+        t_name_tokens = self._tokenizer.tokenize('00000 00000 00000 00000 ' + t_ent['canonical_name'])
 
         # add entity name fields
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
@@ -115,11 +115,11 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         # add entity alias fields
         fields['s_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + a), self._name_token_indexers)
              for a in s_aliases]
         )
         fields['t_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + a), self._name_token_indexers)
              for a in t_aliases]
         )
 
