@@ -21,7 +21,7 @@ class OntoEmmaNN(Model):
     def __init__(self, vocab: Vocabulary,
                  name_text_field_embedder: TextFieldEmbedder,
                  context_text_field_embedder: TextFieldEmbedder,
-                 name_rnn_encoder: Seq2VecEncoder,
+                 name_cnn_encoder: Seq2VecEncoder,
                  name_boe_encoder: Seq2VecEncoder,
                  context_encoder: Seq2VecEncoder,
                  siamese_feedforward: FeedForward,
@@ -35,10 +35,7 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.distributed_context_embedder = BasicTextFieldEmbedder({
-            k: TimeDistributed(v) for k, v in context_text_field_embedder._token_embedders.items()
-        })
-        self.name_rnn_encoder = name_rnn_encoder
+        self.name_cnn_encoder = name_cnn_encoder
         self.name_boe_encoder = name_boe_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
@@ -82,32 +79,28 @@ class OntoEmmaNN(Model):
         # embed and encode entity names
         embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
         s_ent_name_mask = get_text_field_mask(s_ent_name)
-        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
+        encoded_s_ent_name = self.name_cnn_encoder(embedded_s_ent_name, s_ent_name_mask)
 
         embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
         t_ent_name_mask = get_text_field_mask(t_ent_name)
-        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
+        encoded_t_ent_name = self.name_cnn_encoder(embedded_t_ent_name, t_ent_name_mask)
 
         name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
 
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
-        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+        encoded_s_ent_aliases = TimeDistributed(self.name_cnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
         s_ent_aliases_mask = torch.sum(encoded_s_ent_aliases, 2) != 0.0
         averaged_s_ent_aliases = self.name_boe_encoder(encoded_s_ent_aliases, s_ent_aliases_mask)
 
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
-        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+        encoded_t_ent_aliases = TimeDistributed(self.name_cnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         t_ent_aliases_mask = torch.sum(encoded_t_ent_aliases, 2) != 0.0
         averaged_t_ent_aliases = self.name_boe_encoder(encoded_t_ent_aliases, t_ent_aliases_mask)
-
-        # average across non-zero entries
-        average_encoded_s_ent_aliases = self._average_nonzero(encoded_s_ent_aliases)
-        average_encoded_t_ent_aliases = self._average_nonzero(encoded_t_ent_aliases)
 
         alias_similarity = torch.diag(averaged_s_ent_aliases.mm(averaged_t_ent_aliases.t()), 0)
 
@@ -177,7 +170,10 @@ class OntoEmmaNN(Model):
 
         # build output dictionary
         output_dict = dict()
+        output_dict["s_ent_rep"] = s_ent_output
+        output_dict["t_ent_rep"] = t_ent_output
         output_dict["score"] = sigmoid_output
+
         predicted_label = sigmoid_output.round()
         output_dict["predicted_label"] = predicted_label
 
@@ -207,7 +203,7 @@ class OntoEmmaNN(Model):
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
         name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
         context_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("context_text_field_embedder"))
-        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
+        name_cnn_encoder = Seq2VecEncoder.from_params(params.pop("name_cnn_encoder"))
         name_boe_encoder = Seq2VecEncoder.from_params(params.pop("name_boe_encoder"))
         context_encoder = Seq2VecEncoder.from_params(params.pop("context_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
@@ -223,7 +219,7 @@ class OntoEmmaNN(Model):
         return cls(vocab=vocab,
                    name_text_field_embedder=name_text_field_embedder,
                    context_text_field_embedder=context_text_field_embedder,
-                   name_rnn_encoder=name_rnn_encoder,
+                   name_cnn_encoder=name_cnn_encoder,
                    name_boe_encoder=name_boe_encoder,
                    context_encoder=context_encoder,
                    siamese_feedforward=siamese_feedforward,
