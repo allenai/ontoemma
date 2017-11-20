@@ -20,8 +20,16 @@ from emma.FeatureGeneratorLR import FeatureGeneratorLR
 from emma.paths import StandardFilePath
 import emma.constants as constants
 
+from allennlp.commands.train import train_model_from_file
+from allennlp.common.util import prepare_environment
+from allennlp.data.dataset_readers.dataset_reader import DatasetReader
+from allennlp.data.iterators import DataIterator
+from allennlp.commands.evaluate import evaluate
+from allennlp.models.archival import load_archive
+from allennlp.service.predictors import Predictor
 
 # class for training an ontology matcher and aligning input ontologies
+# TODO: Refactor to move all LR model specific code into OntoEmmaLRModel for better encapsulation
 class OntoEmma:
     def __init__(self):
 
@@ -200,8 +208,6 @@ class OntoEmma:
         if model_type == "nn":
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
-            from allennlp.commands.train import train_model_from_file
-
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
             from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
@@ -318,12 +324,6 @@ class OntoEmma:
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
             from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
             from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
-
-            from allennlp.common.util import prepare_environment
-            from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-            from allennlp.data.iterators import DataIterator
-            from allennlp.models.archival import load_archive
-            from allennlp.commands.evaluate import evaluate
 
             # Load from archive
             archive = load_archive(model_path, cuda_device)
@@ -533,9 +533,6 @@ class OntoEmma:
         :return:
         """
         alignment = []
-
-        from allennlp.models.archival import load_archive
-        from allennlp.service.predictors import Predictor
 
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
