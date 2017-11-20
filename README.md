@@ -30,13 +30,12 @@ This script assumes that the model has been pre-trained, and uses *align* functi
 To train an alignment model, use `train_ontoemma.py`. The wrapper takes the following arguments:
 
 - -p \<model_type> (lr = logistic regression, nn = neural network)
-- -m \<pretrained_model>
+- -m \<model_path>
 - -c \<configuration_file>
-- -g \<cuda_device>
 
 Example usage:
 
-`python train_ontoemma.py -p nn -m model_path -c configuration_file.json -g 0`
+`python train_ontoemma.py -p nn -m model_path -c configuration_file.json`
 
 This script will then use the *train* function in `OntoEmma.py` to train the model.
 
