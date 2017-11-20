@@ -30,7 +30,7 @@ class OntoEmmaPredictor(Predictor):
                                           add_batch_dimension=True,
                                           cuda_device=cuda_device,
                                           for_training=False)
-        outputs = self.decode(self._get_encoding_for_instance(**model_input))
+        outputs = self._model.decode(self._get_encoding_for_instance(**model_input))
 
         for name, output in list(outputs.items()):
             # We are predicting on a single instance and we added a batch
