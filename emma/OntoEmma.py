@@ -7,9 +7,11 @@ import math
 import itertools
 import requests
 import jsonlines
+import numpy as np
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from sklearn.metrics.pairwise import cosine_similarity
 
 import torch
 
@@ -475,7 +477,8 @@ class OntoEmma:
                 rel_tuples = [(r.relation_type, r.entity_ids[1]) for r in rels]
                 for t, next_ent in rel_tuples:
                     if next_ent not in regions:
-                        regions[next_ent] = regions[current_ent].append((t, next_ent))
+                        regions[next_ent] = regions[current_ent.research_entity_id][:]
+                        regions[next_ent].append((current_ent.research_entity_id, t))
                         next_step.append(kb.get_entity_by_research_entity_id(next_ent))
             steps += 1
         return regions
@@ -498,9 +501,13 @@ class OntoEmma:
         :param rep2:
         :return:
         """
-        normalized_tensor_1 = rep1 / rep1.norm(dim=-1, keepdim=True)
-        normalized_tensor_2 = rep2 / rep2.norm(dim=-1, keepdim=True)
-        return (normalized_tensor_1 * normalized_tensor_2).sum(dim=-1)
+        r1 = np.array(rep1)
+        r2 = np.array(rep2)
+
+        normalized_r1 = r1 / np.linalg.norm(r1)
+        normalized_r2 = r2 / np.linalg.norm(r2)
+
+        return (normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2))
 
 
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=256):
