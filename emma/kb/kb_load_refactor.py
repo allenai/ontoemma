@@ -172,9 +172,7 @@ class KBLoader(object):
                     assert entity.research_entity_id
                     splits = line.strip().split(' ')
                     assert (len(splits) > 1)
-                    target_research_entity_id = '{}:{}'.format(
-                        kb.name, splits[1]
-                    )
+                    target_research_entity_id = splits[1]
                     relation = KBRelation(
                         relation_type='is_a',
                         entity_ids=[
@@ -190,9 +188,7 @@ class KBLoader(object):
                     splits = line.split(' ')
                     assert (len(splits) > 2)
                     relation_type = splits[1]
-                    target_research_entity_id = '{}:{}'.format(
-                        kb.name, splits[2]
-                    )
+                    target_research_entity_id = splits[2]
                     # is the relation symmetric?
                     if relation_type in KBLoader.OBO_ASYM_RELATION_SET:
                         symmetric = False
@@ -430,19 +426,17 @@ class KBLoader(object):
 
                     # get subclass relations
                     for sc_rel in cl.findall('rdfs:subClassOf', ns):
-                        target_research_entity_id = '{}:{}'.format(
-                            kb.name,
-                            sc_rel.get('{' + ns['rdf'] + '}resource', ns)
-                        )
-                        relation = KBRelation(
-                            relation_type='subClassOf',
-                            entity_ids=[
-                                entity.research_entity_id,
-                                target_research_entity_id
-                            ],
-                            symmetric=False
-                        )
-                        relations.append(relation)
+                        target_research_entity_id = sc_rel.get('{' + ns['rdf'] + '}resource', ns)
+                        if isinstance(target_research_entity_id, str):
+                            relation = KBRelation(
+                                relation_type='subClassOf',
+                                entity_ids=[
+                                    entity.research_entity_id,
+                                    target_research_entity_id
+                                ],
+                                symmetric=False
+                            )
+                            relations.append(relation)
                 except AttributeError:
                     pass
 

@@ -3,12 +3,15 @@ import sys
 import csv
 import json
 import tqdm
+import math
 import itertools
 import requests
 import jsonlines
+import numpy as np
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from sklearn.metrics.pairwise import cosine_similarity
 
 import torch
 
@@ -32,26 +35,7 @@ from allennlp.service.predictors import Predictor
 # TODO: Refactor to move all LR model specific code into OntoEmmaLRModel for better encapsulation
 class OntoEmma:
     def __init__(self):
-
         paths = StandardFilePath()
-        self.kb_dir = paths.ontoemma_kb_dir
-
-        self.kb_file_paths = dict()
-        self.kb_pairs = set([])
-        self._get_kb_fnames()
-
-    def _get_kb_fnames(self):
-        """
-        Parse KB filenames from KB directory and generate KB pairs
-        :return:
-        """
-        for kb_name in constants.TRAINING_KBS:
-            self.kb_file_paths.setdefault(
-                kb_name,
-                os.path.join(self.kb_dir, 'kb-{}.json'.format(kb_name))
-            )
-        self.kb_pairs = itertools.combinations(constants.TRAINING_KBS, 2)
-        return
 
     @staticmethod
     def load_kb(kb_path):
@@ -189,8 +173,98 @@ class OntoEmma:
                     "Unknown input alignment file type. Cannot parse."
                 )
 
+    @staticmethod
+    def _alignments_to_pairs_and_labels(file_path):
+        pairs = []
+        labels = []
+        with jsonlines.open(file_path) as reader:
+            for obj in reader:
+                pairs.append([obj['source_ent'], obj['target_ent']])
+                labels.append(obj['label'])
+        return pairs, labels
+
+    def _train_lr(self, model_path: str, config_file: str):
+        """
+        Train a logistic regression model
+        :param model_path:
+        :param config_file:
+        :return:
+        """
+        model = OntoEmmaLRModel()
+
+        # read model config
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+
+        # parse parameters
+        training_data_path = config['train_data_path']
+        dev_data_path = config['validation_data_path']
+
+        # load training and dev data
+        training_pairs, training_labels = self._alignments_to_pairs_and_labels(training_data_path)
+        dev_pairs, dev_labels = self._alignments_to_pairs_and_labels(dev_data_path)
+
+        sys.stdout.write('Training data size: %i\n' % len(training_labels))
+        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
+
+        # generate features for training pairs
+        feat_gen_train = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
+        training_features = [
+            feat_gen_train.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            for s_ent, t_ent in training_pairs
+        ]
+
+        # generate features for development pairs
+        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
+        dev_features = [
+            feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            for s_ent, t_ent in dev_pairs
+        ]
+
+        model.train(training_features, training_labels)
+
+        training_accuracy = model.score_accuracy(training_features, training_labels)
+        sys.stdout.write(
+            "Accuracy on training data set: %.2f\n" % training_accuracy
+        )
+
+        dev_accuracy = model.score_accuracy(dev_features, dev_labels)
+        sys.stdout.write(
+            "Accuracy on development data set: %.2f\n" % dev_accuracy
+        )
+
+        model.save(model_path)
+        return
+
+    def _train_nn(self, model_path: str, config_file: str, cuda_device: int):
+        """
+        Train a neural network model
+        :param model_path:
+        :param config_file:
+        :param cuda_device:
+        :return:
+        """
+        # import allennlp ontoemma classes (to register -- necessary, do not remove)
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+
+        with open(config_file) as json_data:
+            configuration = json.load(json_data)
+
+        if configuration['trainer']['cuda_device'] != cuda_device:
+            configuration['trainer']['cuda_device'] = cuda_device
+            with open(config_file, 'w') as outf:
+                json.dump(configuration, outf)
+
+        if cuda_device >= 0:
+            with torch.cuda.device(cuda_device):
+                train_model_from_file(config_file, model_path)
+        else:
+            train_model_from_file(config_file, model_path)
+        return
+
     def train(
-        self, model_type: str, model_path: str, config_file: str, cuda_device: int
+        self, model_type: str, model_path: str, config_file: str, cuda_device: int = -1
     ):
         """
         Train model
@@ -203,184 +277,41 @@ class OntoEmma:
         assert model_type in constants.IMPLEMENTED_MODEL_TYPES
         assert config_file is not None
         assert os.path.exists(config_file)
+        sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
-        # train NN model with AllenNLP
         if model_type == "nn":
-            sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
+            self._train_nn(model_path, config_file, cuda_device)
+        elif model_type == "lr":
+            self._train_lr(model_path, config_file)
 
-            # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.list_text_field_embedder import ListTextFieldEmbedder
-            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
-
-            with open(config_file) as json_data:
-                configuration = json.load(json_data)
-
-            if configuration['trainer']['cuda_device'] != cuda_device:
-                configuration['trainer']['cuda_device'] = cuda_device
-                with open(config_file, 'w') as outf:
-                    json.dump(configuration, outf)
-
-            if cuda_device >= 0:
-                with torch.cuda.device(cuda_device):
-                    # train allennlp model
-                    train_model_from_file(config_file, model_path)
-            else:
-                train_model_from_file(config_file, model_path)
-
-            sys.stdout.write("done.\n")
-            return
-
-        # Else create a model as specified
-        if model_type == "lr":
-            model = OntoEmmaLRModel()
-        else:
-            raise (NotImplementedError, "Unknown model type")
-
-        # read model config
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-
-        # parse parameters
-        training_data_path = config['train_data_path']
-        dev_data_path = config['validation_data_path']
-
-        # load training data
-        training_pairs = []
-        training_labels = []
-        with jsonlines.open(training_data_path) as reader:
-            for obj in reader:
-                training_pairs.append([obj['source_ent'], obj['target_ent']])
-                training_labels.append(obj['label'])
-
-        # load development data
-        dev_pairs = []
-        dev_labels = []
-        with jsonlines.open(dev_data_path) as reader:
-            for obj in reader:
-                dev_pairs.append([obj['source_ent'], obj['target_ent']])
-                dev_labels.append(obj['label'])
-
-        training_features = []
-        dev_features = []
-
-        sys.stdout.write('Training data size: %i\n' % len(training_labels))
-        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
-
-        # initialize feature generator
-        feat_gen = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
-
-        # calculate features for training pairs
-        for s_ent, t_ent in training_pairs:
-            training_features.append(
-                feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            )
-
-        # initialize dev feature generator
-        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
-
-        # calculate features for development pairs
-        for s_ent, t_ent in dev_pairs:
-            dev_features.append(
-                feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            )
-
-        sys.stdout.write("Training...\n")
-
-        model.train(training_features, training_labels)
-
-        training_accuracy = model.score_accuracy(
-            training_features, training_labels
-        )
-        sys.stdout.write(
-            "Accuracy on training data set: %.2f\n" % training_accuracy
-        )
-
-        dev_accuracy = model.score_accuracy(dev_features, dev_labels)
-        sys.stdout.write(
-            "Accuracy on development data set: %.2f\n" % dev_accuracy
-        )
-
-        model.save(model_path)
-
+        sys.stdout.write("done.\n")
         return
 
-    def evaluate(self, model_type: str, model_path: str, evaluation_data_file: str, cuda_device: int):
+    def _evaluate_lr(self, model_path: str, evaluation_data_file: str):
         """
-        Evaluate trained model on some dataset specified in the config file
-        :param model_type
+
         :param model_path:
-        :param config_file:
-        :param cuda_device: GPU device number
+        :param evaluation_data_file:
         :return:
         """
-        sys.stdout.write("Begin evaluation...\n")
-
-        assert os.path.exists(model_path)
-        assert evaluation_data_file is not None
-        assert os.path.exists(evaluation_data_file)
-
-        if model_type == "nn":
-            # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
-
-            # Load from archive
-            archive = load_archive(model_path, cuda_device)
-            config = archive.config
-            prepare_environment(config)
-            model = archive.model
-            model.eval()
-
-            # Load the evaluation data
-            dataset_reader = DatasetReader.from_params(config.pop('dataset_reader'))
-            evaluation_data_path = evaluation_data_file
-            dataset = dataset_reader.read(evaluation_data_path)
-            dataset.index_instances(model.vocab)
-
-            iterator = DataIterator.from_params(config.pop("iterator"))
-
-            metrics = evaluate(model, dataset, iterator, cuda_device)
-
-            sys.stdout.write('Metrics:\n')
-            for key, metric in metrics.items():
-                sys.stdout.write("%s: %s\n" % (key, metric))
-
-            return
-
-        # create model
-        if model_type == "lr":
-            model = OntoEmmaLRModel()
-        else:
-            raise (NotImplementedError, "Unknown model type")
-
         # load model from disk
+        model = OntoEmmaLRModel()
         model.load(model_path)
 
         # load evaluation data
-        eval_pairs = []
-        eval_labels = []
-        with jsonlines.open(evaluation_data_file) as reader:
-            for obj in reader:
-                eval_pairs.append([obj['source_ent'], obj['target_ent']])
-                eval_labels.append(obj['label'])
+        eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
         feat_gen = FeatureGeneratorLR([item for sublist in eval_pairs for item in sublist])
-        eval_features = []
+        eval_features = [
+            feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            for s_ent, t_ent in eval_pairs
+        ]
 
-        # calculate features for development pairs
-        for s_ent, t_ent in eval_pairs:
-            eval_features.append(
-                feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            )
+        # compute metrics
+        tp, fp, tn, fn = (0, 0, 0, 0)
+        precision, recall, accuracy, f1_score = (0.0, 0.0, 0.0, 0.0)
 
-        tp = 0
-        fp = 0
-        tn = 0
-        fn = 0
-
-        # iterature through evaluation examples
         for features, label in zip(eval_features, eval_labels):
             prediction = model.predict_entity_pair(features)
             if prediction[0][1] > constants.SCORE_THRESHOLD and label == 1:
@@ -392,21 +323,76 @@ class OntoEmma:
             else:
                 tn += 1
 
-        precision = 0.0
-        recall = 0.0
-        f1_score = 0.0
-
         if tp + fp > 0:
             precision = tp / (tp + fp)
         if tp + fn > 0:
             recall = tp / (tp + fn)
+        if tp + fp + fn + tn > 0:
+            accuracy = (tp + tn)/(tp + fp + fn + tn)
         if precision + recall > 0.0:
             f1_score = (2 * precision * recall / (precision + recall))
 
-        sys.stdout.write('Precision: %.2f\n' % precision)
-        sys.stdout.write('Recall: %.2f\n' % recall)
-        sys.stdout.write('F1-score: %.2f\n' % f1_score)
+        metrics = {'precision': precision,
+                   'recall': recall,
+                   'accuracy': accuracy,
+                   'f1_score': f1_score}
+        return metrics
 
+    def _evaluate_nn(self, model_path: str, evaluation_data_file: str, cuda_device: int):
+        """
+
+        :param model_path:
+        :param evaluation_data_file:
+        :param cuda_device:
+        :return:
+        """
+        # import allennlp ontoemma classes (to register -- necessary, do not remove)
+        from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+        from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
+
+        # Load from archive
+        archive = load_archive(model_path, cuda_device)
+        config = archive.config
+        prepare_environment(config)
+        model = archive.model
+        model.eval()
+
+        # Load the evaluation data
+        dataset_reader = DatasetReader.from_params(config.pop('dataset_reader'))
+        evaluation_data_path = evaluation_data_file
+        dataset = dataset_reader.read(evaluation_data_path)
+
+        # compute metrics
+        dataset.index_instances(model.vocab)
+        iterator = DataIterator.from_params(config.pop("iterator"))
+        metrics = evaluate(model, dataset, iterator, cuda_device)
+
+        return metrics
+
+    def evaluate(self, model_type: str, model_path: str, evaluation_data_file: str, cuda_device: int):
+        """
+        Evaluate trained model on some dataset specified in the config file
+        :param model_type
+        :param model_path:
+        :param config_file:
+        :param cuda_device: GPU device number
+        :return:
+        """
+        assert model_type in constants.IMPLEMENTED_MODEL_TYPES
+        assert os.path.exists(model_path)
+        assert evaluation_data_file is not None
+        assert os.path.exists(evaluation_data_file)
+
+        metrics = dict()
+
+        if model_type == "nn":
+            metrics = self._evaluate_nn(model_path, evaluation_data_file, cuda_device)
+        elif model_type == "lr":
+            metrics = self._evaluate_lr(model_path, evaluation_data_file)
+
+        sys.stdout.write('Metrics:\n')
+        for key, metric in metrics.items():
+            sys.stdout.write("\t%s: %s\n" % (key, metric))
         return
 
     def _align_lr(self, model_path, source_kb, target_kb, candidate_selector):
@@ -417,12 +403,37 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        # Initialize
+
+        # returns json representation of entity that matches what feature generator expects
+        def _form_json_entity(ent, kb):
+            parent_ids = [kb.relations[rel_id].entity_ids[1]
+                          for rel_id in ent.relation_ids
+                          if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
+
+            child_ids = [kb.relations[rel_id].entity_ids[1]
+                         for rel_id in ent.relation_ids
+                         if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
+
+            parents = [kb.get_entity_by_research_entity_id(i).canonical_name
+                       for i in parent_ids if i in kb.research_entity_id_to_entity_index]
+
+            children = [kb.get_entity_by_research_entity_id(i).canonical_name
+                        for i in child_ids if i in kb.research_entity_id_to_entity_index]
+
+            return {
+                'research_entity_id': ent.research_entity_id,
+                'canonical_name': ent.canonical_name,
+                'aliases': ent.aliases,
+                'definition': ent.definition,
+                'par_relations': parents,
+                'chd_relations': children
+            }
+
         alignment = []
 
         feature_generator = FeatureGeneratorLR(
-            [self._form_training_json_entity(ent, source_kb) for ent in source_kb.entities] +
-            [self._form_training_json_entity(ent, target_kb) for ent in target_kb.entities]
+            [_form_json_entity(ent, source_kb) for ent in source_kb.entities] +
+            [_form_json_entity(ent, target_kb) for ent in target_kb.entities]
         )
 
         sys.stdout.write("Loading model...\n")
@@ -430,14 +441,9 @@ class OntoEmma:
         model.load(model_path)
 
         sys.stdout.write("Making predictions...\n")
-
-        for index, s_ent in enumerate(source_kb.entities):
-            # show progress to user so that they feel good.
-            if index == 1:
-                sys.stdout.write('\n')
-            if index % 10 == 1:
-                sys.stdout.write('\rpredicted alignments for {} out of {} source entities.'.format(
-                    index, len(source_kb.entities)))
+        s_ent_tqdm = tqdm.tqdm(source_kb.entities,
+                               total=len(source_kb.entities))
+        for s_ent in s_ent_tqdm:
             s_ent_id = s_ent.research_entity_id
             for t_ent_id in candidate_selector.select_candidates(
                     s_ent_id
@@ -450,80 +456,61 @@ class OntoEmma:
         return alignment
 
     @staticmethod
-    def _form_training_json_entity(ent, kb):
+    def _get_region_around_ent(start_ent, kb):
         """
-        Return json representation of entity from training data
+        Compute region around entity in kb, returning a dictionary of paths for each entity in the region
         :param ent:
+        :param kb:
         :return:
         """
-        parent_ids = [kb.relations[rel_id].entity_ids[1]
-                      for rel_id in ent.relation_ids
-                      if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
+        regions = dict()
+        regions[start_ent.research_entity_id] = []
 
-        child_ids = [kb.relations[rel_id].entity_ids[1]
-                     for rel_id in ent.relation_ids
-                     if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
+        steps = 0
+        next_step = [start_ent]
 
-        synonym_ids = [kb.relations[rel_id].entity_ids[1]
-                       for rel_id in ent.relation_ids
-                       if kb.relations[rel_id].relation_type in constants.UMLS_SYNONYM_REL_LABELS]
-
-        sibling_ids = [kb.relations[rel_id].entity_ids[1]
-                       for rel_id in ent.relation_ids
-                       if kb.relations[rel_id].relation_type in constants.UMLS_SIBLING_REL_LABELS]
-
-        parents = [kb.get_entity_by_research_entity_id(i).canonical_name
-                   for i in parent_ids if i in kb.research_entity_id_to_entity_index]
-
-        children = [kb.get_entity_by_research_entity_id(i).canonical_name
-                    for i in child_ids if i in kb.research_entity_id_to_entity_index]
-
-        synonyms = [kb.get_entity_by_research_entity_id(i).canonical_name
-                    for i in synonym_ids if i in kb.research_entity_id_to_entity_index]
-
-        siblings = [kb.get_entity_by_research_entity_id(i).canonical_name
-                    for i in sibling_ids if i in kb.research_entity_id_to_entity_index]
-
-        return {
-            'research_entity_id': ent.research_entity_id,
-            'canonical_name': ent.canonical_name,
-            'aliases': ent.aliases,
-            'definition': ent.definition,
-            'other_contexts': ent.other_contexts,
-            'par_relations': parents,
-            'chd_relations': children,
-            'syn_relations': synonyms,
-            'sib_relations': siblings
-        }
+        while steps < constants.SCORE_THRESHOLD:
+            this_step = next_step
+            next_step = []
+            for current_ent in this_step:
+                rels = [kb.relations[rel_id] for rel_id in current_ent.relation_ids]
+                rel_tuples = [(r.relation_type, r.entity_ids[1]) for r in rels]
+                for t, next_ent in rel_tuples:
+                    if next_ent not in regions:
+                        regions[next_ent] = regions[current_ent.research_entity_id][:]
+                        regions[next_ent].append((current_ent.research_entity_id, t))
+                        next_step.append(kb.get_entity_by_research_entity_id(next_ent))
+            steps += 1
+        return regions
 
     @staticmethod
-    def _form_json_entity(ent):
+    def _get_distance_weight(path1, path2):
         """
-        Return json representation of entity
-        :param ent:
+        Calculate weight based on two path lengths; if path lengths are both zero, the weight is 1
+        :param path1:
+        :param path2:
         :return:
         """
-        return {
-                    'research_entity_id': ent.research_entity_id,
-                    'canonical_name': ent.canonical_name,
-                    'aliases': ent.aliases,
-                    'definition': ent.definition,
-                    'other_contexts': ent.other_contexts
-                }
+        return math.exp(-(len(path1) + len(path2))/2)
 
-    def _candidate_pair_generator(self, source_kb, target_kb, candidate_selector):
-        for s_ent in source_kb.entities:
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent.research_entity_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                yield {
-                    'source_ent': self._form_json_entity(s_ent),
-                    'target_ent': self._form_json_entity(t_ent),
-                    'label': 0
-                }
+    @staticmethod
+    def _get_rep_similarity(rep1, rep2):
+        """
+        Compute similarity between two tensors; currently just returns cosine similarity
+        :param rep1:
+        :param rep2:
+        :return:
+        """
+        r1 = np.array(rep1)
+        r2 = np.array(rep2)
 
-    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
+        normalized_r1 = r1 / np.linalg.norm(r1)
+        normalized_r2 = r2 / np.linalg.norm(r2)
+
+        return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
+
+
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=256):
         """
         Align using neural network model
         :param source_kb:
@@ -532,37 +519,85 @@ class OntoEmma:
         :param cuda_device: GPU device number
         :return:
         """
-        alignment = []
+
+        # returns json representation of entity
+        def _form_json_entity(ent_to_json):
+            return {
+                'research_entity_id': ent_to_json.research_entity_id,
+                'canonical_name': ent_to_json.canonical_name,
+                'aliases': ent_to_json.aliases,
+                'definition': ent_to_json.definition,
+                'other_contexts': ent_to_json.other_contexts
+            }
 
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        archive = load_archive(model_path)
+        archive = load_archive(model_path, cuda_device=cuda_device)
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
-        # create iterator for candidate pairs
-        cand_generator = self._candidate_pair_generator(source_kb, target_kb, candidate_selector)
-
-        # predict in batches
+        # computing entity representations
+        sys.stdout.write("Computing entity representations...\n")
+        rep_dict = dict()
         batch_json_data = []
-        for json_data in cand_generator:
-            batch_json_data.append(json_data)
-            if len(batch_json_data) == batch_size:
+        entity_tqdm = tqdm.tqdm(itertools.chain(source_kb.entities, target_kb.entities),
+                                desc="KB entities",
+                                total=len(source_kb.entities)+len(target_kb.entities))
+
+        if cuda_device >= 0:
+            # predict in batches
+            for ent in entity_tqdm:
+                batch_json_data.append(_form_json_entity(ent))
+                if len(batch_json_data) == batch_size:
+                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
+                    for model_input, output in zip(batch_json_data, results):
+                        rep_dict[model_input['research_entity_id']] = output['ent_rep']
+                    batch_json_data = []
+            if batch_json_data:
                 results = predictor.predict_batch_json(batch_json_data, cuda_device)
                 for model_input, output in zip(batch_json_data, results):
-                    if output['predicted_label'] == [1.0]:
-                        # sys.stdout.write('Predicted alignment between %s and %s.\n' % (
-                        #     model_input['source_ent']['canonical_name'], model_input['target_ent']['canonical_name']
-                        # ))
-                        alignment.append((model_input['source_ent']['research_entity_id'],
-                                          model_input['target_ent']['research_entity_id'],
-                                          1.0))
-                batch_json_data = []
+                    rep_dict[model_input['research_entity_id']] = output['ent_rep']
+        else:
+            # predict individually
+            for ent in entity_tqdm:
+                output = predictor.predict_json(_form_json_entity(ent))
+                rep_dict[ent.research_entity_id] = output['ent_rep']
+
+        sys.stdout.write("Making predictions...\n")
+        alignment = []
+        s_ent_tqdm = tqdm.tqdm(source_kb.entities,
+                               total=len(source_kb.entities))
+        for s_ent in s_ent_tqdm:
+            s_ent_id = s_ent.research_entity_id
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+
+                # generate regions around s_ent and t_ent not included s_ent and t_ent
+                s_region = self._get_region_around_ent(s_ent, source_kb)
+                t_region = self._get_region_around_ent(t_ent, target_kb)
+
+                # sum regional contributions to similarity
+                global_sum = 0.0
+
+                for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                    global_sum += self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id]) \
+                                  * self._get_rep_similarity(rep_dict[s_neighbor_id], rep_dict[t_neighbor_id])
+                global_similarity = global_sum / (len(s_region) + len(t_region))
+
+                # TODO: replace with a LR/SVM model which takes global_similarity as an input feature
+                if global_similarity >= 0.4:
+                    alignment.append((s_ent_id, t_ent_id, global_similarity))
 
         return alignment
 
-    def align(self, model_type, model_path, s_kb_path, t_kb_path, gold_path, output_path, cuda_device, missed_path=None):
+    def align(self,
+              model_type, model_path,
+              s_kb_path, t_kb_path,
+              gold_path, output_path,
+              cuda_device=-1, missed_path=None):
         """
         Align two input ontologies
         :param model_type: type of model
@@ -575,6 +610,11 @@ class OntoEmma:
         :param missed_path: optional parameter for outputting missed alignments
         :return:
         """
+        assert model_type in constants.IMPLEMENTED_MODEL_TYPES
+        assert os.path.exists(model_path)
+        assert s_kb_path is not None
+        assert t_kb_path is not None
+
         alignment_scores = None
 
         sys.stdout.write("Loading KBs...\n")
@@ -584,19 +624,18 @@ class OntoEmma:
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
 
+        alignment = []
         if model_type == 'lr':
             alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel)
         elif model_type == 'nn':
             alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
-        else:
-            raise(NotImplementedError, "Model type has not been implemented.")
 
         if missed_path is None and output_path is not None:
             missed_path = output_path + '.ontoemma.missed'
 
         if gold_path is not None and os.path.exists(gold_path):
             sys.stdout.write("Evaluating against gold standard...\n")
-            alignment_scores = self.evaluate_alignment(gold_path, alignment, s_kb, t_kb, missed_path)
+            alignment_scores = self.compare_alignment_to_gold(gold_path, alignment, s_kb, t_kb, missed_path)
 
         if output_path is not None:
             sys.stdout.write("Writing results to file...\n")
@@ -604,7 +643,7 @@ class OntoEmma:
 
         return alignment_scores
 
-    def evaluate_alignment(self, gold_path, alignment, s_kb, t_kb, missed_file):
+    def compare_alignment_to_gold(self, gold_path, alignment, s_kb, t_kb, missed_file):
         """
         Make predictions on features and evaluate against gold
         :param gold_path: path to gold alignment file
@@ -680,34 +719,6 @@ class OntoEmma:
         sys.stdout.write('F1-score: %.2f\n' % f1_score)
 
         return precision, recall, f1_score
-
-    def eval_cs(self, s_kb_path, t_kb_path, gold_path, output_path, missed_path):
-        """
-        Evaluate candidate selection module
-        :param s_kb_path: source kb path
-        :param t_kb_path: target kb path
-        :param gold_path: gold alignment file path
-        :param output_path: output path for evaluation results
-        :param missed_path: output path for missed alignments
-        :return:
-        """
-        sys.stdout.write("Loading KBs...\n")
-        s_kb = self.load_kb(s_kb_path)
-        t_kb = self.load_kb(t_kb_path)
-
-        sys.stdout.write("Loading gold alignment...\n")
-        gold_alignment = self.load_alignment(gold_path)
-        positive_alignments = [(i[0], i[1]) for i in gold_alignment]
-        sys.stdout.write("\tNumber of gold alignments: %i\n" % len(positive_alignments))
-
-        sys.stdout.write("Starting candidate selection...\n")
-        cand_sel = CandidateSelection(s_kb, t_kb)
-        cand_sel.EVAL_OUTPUT_FILE = output_path
-        cand_sel.EVAL_MISSED_FILE = missed_path
-
-        sys.stdout.write("Evaluating candidate selection...\n")
-        cand_sel.eval(positive_alignments)
-        return
 
     @staticmethod
     def _write_alignment_to_tsv(output_path, alignment):
@@ -808,3 +819,31 @@ class OntoEmma:
             raise NotImplementedError(
                 "Unknown output file type. Cannot write alignment to file."
             )
+
+        def eval_cs(self, s_kb_path, t_kb_path, gold_path, output_path, missed_path):
+            """
+            Evaluate candidate selection module
+            :param s_kb_path: source kb path
+            :param t_kb_path: target kb path
+            :param gold_path: gold alignment file path
+            :param output_path: output path for evaluation results
+            :param missed_path: output path for missed alignments
+            :return:
+            """
+            sys.stdout.write("Loading KBs...\n")
+            s_kb = self.load_kb(s_kb_path)
+            t_kb = self.load_kb(t_kb_path)
+
+            sys.stdout.write("Loading gold alignment...\n")
+            gold_alignment = self.load_alignment(gold_path)
+            positive_alignments = [(i[0], i[1]) for i in gold_alignment]
+            sys.stdout.write("\tNumber of gold alignments: %i\n" % len(positive_alignments))
+
+            sys.stdout.write("Starting candidate selection...\n")
+            cand_sel = CandidateSelection(s_kb, t_kb)
+            cand_sel.EVAL_OUTPUT_FILE = output_path
+            cand_sel.EVAL_MISSED_FILE = missed_path
+
+            sys.stdout.write("Evaluating candidate selection...\n")
+            cand_sel.eval(positive_alignments)
+            return
