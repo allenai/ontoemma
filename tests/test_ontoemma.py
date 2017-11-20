@@ -32,7 +32,7 @@ class TestOntoEmmaAlign(unittest.TestCase):
         p, r, f1 = matcher.align(
             'nn', model_path,
             source_ont_file, target_ont_file,
-            input_alignment_file, output_alignment_file,
+            input_alignment_file, output_alignment_file
             -1
         )
         assert p >= 0.0

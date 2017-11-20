@@ -24,65 +24,43 @@
     "name_text_field_embedder": {
             "tokens": {
                     "type": "embedding",
-                    "embedding_dim": 25
+                    "embedding_dim": 100
             },
             "token_characters": {
                     "type": "character_encoding",
                     "embedding": {
-                      "embedding_dim": 8
+                      "embedding_dim": 50
                     },
                     "encoder": {
                       "type": "cnn",
-                      "embedding_dim": 8,
-                      "num_filters": 25,
-                      "ngram_filter_sizes": [5]
+                      "embedding_dim": 50,
+                      "num_filters": 50,
+                      "ngram_filter_sizes": [4, 5]
                     },
                     "dropout": 0.2
             }
     },
-    "alias_text_field_embedder": {
-            "type": "list_embedder",
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
-    "definition_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
-    },
     "context_text_field_embedder": {
-            "type": "list_embedder",
-            "tokens": {
-                    "type": "embedding",
-                    "embedding_dim": 50
-            }
+      "tokens": {
+        "type": "embedding",
+        "embedding_dim": 100
+      }
     },
-    "name_rnn_encoder": {
-      "type": "rnn",
-      "input_size": 50,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
+    "name_cnn_encoder": {
+      "type": "cnn",
+      "embedding_dim": 200,
+      "num_filters": 50,
+      "ngram_filter_sizes": [3,4]
     },
-    "definition_encoder": {
-      "type": "lstm",
-      "input_size": 50,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
+    "name_boe_encoder": {
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
     },
     "context_encoder": {
-      "type": "lstm",
-      "input_size": 50,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
     },
     "siamese_feedforward": {
       "input_dim": 400,
@@ -92,18 +70,35 @@
       "dropout": 0.2
     },
     "decision_feedforward": {
-      "input_dim": 200,
+      "input_dim": 204,
       "num_layers": 2,
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],
       "dropout": [0.2, 0.0]
-    }
+    },
+    "initializer": [
+      [".*linear_layers.*weight", {"type": "xavier_normal"}],
+      [".*embedder.*weight", {"type": "xavier_normal"}]
+     ]
   },
-  "iterator": {"type": "basic", "batch_size": 32},
+  "iterator": {
+    "type": "bucket",
+    "sorting_keys": [
+                     ["s_ent_context", "list_num_tokens"],
+                     ["t_ent_context", "list_num_tokens"],
+                     ["s_ent_def", "num_tokens"],
+                     ["t_ent_def", "num_tokens"],
+                     ["s_ent_aliases", "list_num_tokens"],
+                     ["t_ent_aliases", "list_num_tokens"],
+                     ["s_ent_name", "num_tokens"],
+                     ["t_ent_name", "num_tokens"]],
+    "batch_size": 16
+  },
   "trainer": {
     "optimizer": "adam",
     "num_epochs": 5,
     "patience": 5,
+    "validation_metric": "+f1_score",
     "cuda_device": -1
   }
 }
