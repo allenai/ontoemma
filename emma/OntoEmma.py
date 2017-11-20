@@ -26,7 +26,7 @@ from allennlp.commands.train import train_model_from_file
 from allennlp.common.util import prepare_environment
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.iterators import DataIterator
-from allennlp.commands.evaluate import evaluate
+from allennlp.commands.evaluate import evaluate as evaluate_allennlp
 from allennlp.models.archival import load_archive
 from allennlp.service.predictors import Predictor
 
@@ -235,12 +235,11 @@ class OntoEmma:
         model.save(model_path)
         return
 
-    def _train_nn(self, model_path: str, config_file: str, cuda_device: int):
+    def _train_nn(self, model_path: str, config_file: str):
         """
         Train a neural network model
         :param model_path:
         :param config_file:
-        :param cuda_device:
         :return:
         """
         # import allennlp ontoemma classes (to register -- necessary, do not remove)
@@ -250,10 +249,7 @@ class OntoEmma:
         with open(config_file) as json_data:
             configuration = json.load(json_data)
 
-        if configuration['trainer']['cuda_device'] != cuda_device:
-            configuration['trainer']['cuda_device'] = cuda_device
-            with open(config_file, 'w') as outf:
-                json.dump(configuration, outf)
+        cuda_device = configuration['trainer']['cuda_device']
 
         if cuda_device >= 0:
             with device(cuda_device):
@@ -263,14 +259,13 @@ class OntoEmma:
         return
 
     def train(
-        self, model_type: str, model_path: str, config_file: str, cuda_device: int = -1
+        self, model_type: str, model_path: str, config_file: str
     ):
         """
         Train model
         :param model_type: type of model (nn, lr etc)
         :param model_path: path to ontoemma model
         :param config_file: path to training data, dev data, config for nn
-        :param cuda_device: GPU device number
         :return:
         """
         assert model_type in constants.IMPLEMENTED_MODEL_TYPES
@@ -279,7 +274,7 @@ class OntoEmma:
         sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
         if model_type == "nn":
-            self._train_nn(model_path, config_file, cuda_device)
+            self._train_nn(model_path, config_file)
         elif model_type == "lr":
             self._train_lr(model_path, config_file)
 
@@ -364,7 +359,7 @@ class OntoEmma:
         # compute metrics
         dataset.index_instances(model.vocab)
         iterator = DataIterator.from_params(config.pop("iterator"))
-        metrics = evaluate(model, dataset, iterator, cuda_device)
+        metrics = evaluate_allennlp(model, dataset, iterator, cuda_device)
 
         return metrics
 

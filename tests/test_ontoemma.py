@@ -17,7 +17,7 @@ class TestOntoEmmaAlign(unittest.TestCase):
 
         matcher = OntoEmma()
         matcher.train(
-            'nn', model_path, config_file, -1
+            'nn', model_path, config_file
         )
 
         assert(os.path.exists(os.path.join(model_path, 'model.tar.gz')))
