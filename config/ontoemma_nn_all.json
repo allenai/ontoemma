@@ -31,13 +31,13 @@
             "token_characters": {
                     "type": "character_encoding",
                     "embedding": {
-                      "embedding_dim": 8
+                      "embedding_dim": 50
                     },
                     "encoder": {
                       "type": "cnn",
-                      "embedding_dim": 8,
+                      "embedding_dim": 50,
                       "num_filters": 50,
-                      "ngram_filter_sizes": [5]
+                      "ngram_filter_sizes": [4, 5]
                     },
                     "dropout": 0.2
             }
@@ -50,21 +50,21 @@
                     "trainable": false
             }
     },
-    "name_rnn_encoder": {
-      "type": "rnn",
-      "input_size": 150,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
+    "name_cnn_encoder": {
+      "type": "cnn",
+      "embedding_dim": 200,
+      "num_filters": 50,
+      "ngram_filter_sizes": [3,4]
+    },
+    "name_boe_encoder": {
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
     },
     "context_encoder": {
-      "type": "lstm",
-      "input_size": 100,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
     },
     "siamese_feedforward": {
       "input_dim": 400,
@@ -79,7 +79,11 @@
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],
       "dropout": [0.2, 0.0]
-    }
+    },
+    "initializer": [
+      [".*linear_layers.*weight", {"type": "xavier_normal"}],
+      [".*embedder.*weight", {"type": "xavier_normal"}]
+     ]
   },
   "iterator": {
     "type": "bucket",
@@ -98,6 +102,7 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
+    "validation_metric": "+f1_score",
     "cuda_device": -1
   }
 }
