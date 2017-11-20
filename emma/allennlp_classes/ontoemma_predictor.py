@@ -59,15 +59,13 @@ class OntoEmmaPredictor(Predictor):
                 return l
             return random.sample(l, n)
 
-        ent = json["ent"]
-
         fields: Dict[str, Field] = {}
         # name field
-        name_tokens = self._dataset_reader._tokenizer.tokenize('00000 00000 00000 00000 ' + ent['canonical_name'])
+        name_tokens = self._dataset_reader._tokenizer.tokenize('00000 00000 00000 00000 ' + json['canonical_name'])
         fields['name'] = TextField(name_tokens, self._dataset_reader._name_token_indexers)
 
         # alias field
-        aliases = sample_n(ent['aliases'], 16, 128)
+        aliases = sample_n(json['aliases'], 16, 128)
         fields['aliases'] = ListField(
             [TextField(self._dataset_reader._tokenizer.tokenize('00000 00000 00000 00000 ' + a),
                        self._dataset_reader._name_token_indexers)
@@ -76,14 +74,14 @@ class OntoEmmaPredictor(Predictor):
 
         # definition field
         fields['definition'] = TextField(
-            self._dataset_reader._tokenizer.tokenize(ent['definition']),
+            self._dataset_reader._tokenizer.tokenize(json['definition']),
             self._dataset_reader._token_only_indexer
-        ) if ent['definition'] \
+        ) if json['definition'] \
             else TextField(self._dataset_reader._tokenizer.tokenize('00000'),
                            self._dataset_reader._token_only_indexer)
 
         # context field
-        contexts = sample_n(ent['other_contexts'], 16, 256)
+        contexts = sample_n(json['other_contexts'], 16, 256)
 
         fields['contexts'] = ListField(
             [TextField(self._dataset_reader._tokenizer.tokenize(c),
@@ -103,7 +101,7 @@ class OntoEmmaPredictor(Predictor):
                                           cuda_device=cuda_device,
                                           for_training=False)
 
-        outputs = self.decode(self._get_encoding_for_instance(**model_input))
+        outputs = self._model.decode(self._get_encoding_for_instance(**model_input))
 
         instance_separated_output: List[Dict[str, numpy.ndarray]] = [{} for _ in dataset.instances]
         for name, output in list(outputs.items()):
