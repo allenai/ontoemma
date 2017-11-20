@@ -11,9 +11,8 @@ import numpy as np
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
-from sklearn.metrics.pairwise import cosine_similarity
 
-import torch
+from torch.cuda import device
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
@@ -257,7 +256,7 @@ class OntoEmma:
                 json.dump(configuration, outf)
 
         if cuda_device >= 0:
-            with torch.cuda.device(cuda_device):
+            with device(cuda_device):
                 train_model_from_file(config_file, model_path)
         else:
             train_model_from_file(config_file, model_path)
