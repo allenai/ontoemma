@@ -15,7 +15,7 @@ from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
 from emma.allennlp_classes.boolean_f1 import BooleanF1
 
 
-@Model.register("ontoemmaNN")
+@Model.register("ontoemmaNN_nocontext")
 class OntoEmmaNN(Model):
 
     def __init__(self, vocab: Vocabulary,
@@ -34,9 +34,6 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.distributed_context_embedder = BasicTextFieldEmbedder({
-            k: TimeDistributed(v) for k, v in context_text_field_embedder._token_embedders.items()
-        })
         self.name_rnn_encoder = name_rnn_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
@@ -67,8 +64,10 @@ class OntoEmmaNN(Model):
                 t_ent_aliases: Dict[str, torch.LongTensor],
                 s_ent_def: Dict[str, torch.LongTensor],
                 t_ent_def: Dict[str, torch.LongTensor],
-                s_ent_context: Dict[str, torch.LongTensor],
-                t_ent_context: Dict[str, torch.LongTensor],
+                s_ent_parents: Dict[str, torch.LongTensor],
+                t_ent_parents: Dict[str, torch.LongTensor],
+                s_ent_children: Dict[str, torch.LongTensor],
+                t_ent_children: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -108,32 +107,47 @@ class OntoEmmaNN(Model):
         t_ent_def_mask = get_text_field_mask(t_ent_def)
         encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
 
-        # embed and encode all contexts
-        embedded_s_ent_context = self.distributed_context_embedder(s_ent_context)
-        s_ent_context_mask = get_text_field_mask(s_ent_context)
-        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
+        # embed and encode all parent relations
+        embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
+        s_ent_parents_mask = get_text_field_mask(s_ent_parents)
+        encoded_s_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_parents, s_ent_parents_mask)
 
-        embedded_t_ent_context = self.distributed_context_embedder(t_ent_context)
-        t_ent_context_mask = get_text_field_mask(t_ent_context)
-        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
+        embedded_t_ent_parents = self.distributed_name_embedder(t_ent_parents)
+        t_ent_parents_mask = get_text_field_mask(t_ent_parents)
+        encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
 
-        # average contexts
-        average_encoded_s_ent_context = self._average_nonzero(encoded_s_ent_context)
-        average_encoded_t_ent_context = self._average_nonzero(encoded_t_ent_context)
+        # average across non-zero entries
+        average_encoded_s_ent_parents = self._average_nonzero(encoded_s_ent_parents)
+        average_encoded_t_ent_parents = self._average_nonzero(encoded_t_ent_parents)
+
+        # embed and encode all child relations
+        embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
+        s_ent_children_mask = get_text_field_mask(s_ent_children)
+        encoded_s_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_children, s_ent_children_mask)
+
+        embedded_t_ent_children = self.distributed_name_embedder(t_ent_children)
+        t_ent_children_mask = get_text_field_mask(t_ent_children)
+        encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
+
+        # average across non-zero entries
+        average_encoded_s_ent_children = self._average_nonzero(encoded_s_ent_children)
+        average_encoded_t_ent_children = self._average_nonzero(encoded_t_ent_children)
 
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
              average_encoded_s_ent_aliases,
              encoded_s_ent_def,
-             average_encoded_s_ent_context
+             average_encoded_s_ent_parents,
+             average_encoded_s_ent_children
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
              average_encoded_t_ent_aliases,
              encoded_t_ent_def,
-             average_encoded_t_ent_context
+             average_encoded_t_ent_parents,
+             average_encoded_t_ent_children
              ],
             dim=-1)
 

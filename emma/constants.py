@@ -21,5 +21,23 @@ NGRAM_SIZE = 5
 # IDF limit below which tokens are thrown out
 IDF_LIMIT = np.log(20)
 
+# Negative samples per positive
+NUM_HARD_NEGATIVE_PER_POSITIVE = 1
+NUM_EASY_NEGATIVE_PER_POSITIVE = 1
+
 # training KB names
 TRAINING_KBS = ['CPT', 'GO', 'HGNC', 'HPO', 'MSH', 'OMIM', 'RXNORM']
+
+# development KB names
+DEVELOPMENT_KBS = ['DRUGBANK', 'HL7V3.0', 'ICD10CM', 'LNC']
+
+# training, development, and test split
+TRAINING_PART = 0.6
+DEVELOPMENT_PART = 0.2
+TEST_PART = 0.2
+
+# relation labels from UMLS
+UMLS_SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
+UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 'part_of']
+UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
+UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']

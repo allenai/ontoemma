@@ -9,24 +9,21 @@ import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 
-# class for generating features between entities of two KBs
-class FeatureGenerator:
-    def __init__(self, s_kb: KnowledgeBase, t_kb: KnowledgeBase):
-        self.SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
-        self.PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 'part_of']
-        self.CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
-        self.SIBLING_REL_LABELS = ['SIB', 'RO']
+# class for generating features for LR model between entities of two KBs
+class FeatureGeneratorLR:
+    # TODO: instead of tokenizing all entities, generate tokens and features as needed and cache
+    def __init__(self, entity_data):
+        self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
+        self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
-        self.s_kb = s_kb
-        self.t_kb = t_kb
+        self.entity_data = entity_data
 
         self.STOP = set(stopwords.words('english'))
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
         self.stemmer = SnowballStemmer("english")
         self.lemmatizer = WordNetLemmatizer()
 
-        self.s_tokens = dict()
-        self.t_tokens = dict()
+        self.token_dict = dict()
 
         self._generate_token_maps()
 
@@ -56,14 +53,13 @@ class FeatureGenerator:
 
         return ent_names
 
-    def _compute_tokens(self, ent, kb):
+    def _compute_tokens(self, ent):
         """
-        Compute tokens from given entity in kb
+        Compute tokens from given entity
         :param ent:
-        :param kb:
         :return:
         """
-        name_string = string_utils.normalize_string(ent.canonical_name)
+        name_string = string_utils.normalize_string(ent['canonical_name'])
         name_tokens = string_utils.tokenize_string(name_string, self.tokenizer, self.STOP)
         stemmed_tokens = tuple([self.stemmer.stem(w) for w in name_tokens])
         lemmatized_tokens = tuple([self.lemmatizer.lemmatize(w) for w in name_tokens])
@@ -73,17 +69,13 @@ class FeatureGenerator:
 
         alias_tokens = []
 
-        for a in ent.aliases:
+        for a in ent['aliases']:
             alias_tokens.append(string_utils.tokenize_string(
                 string_utils.normalize_string(a), self.tokenizer, self.STOP))
 
-        parent_names = self._get_ent_names_from_relations(
-            ent, kb, self.PARENT_REL_LABELS
-        )
+        parent_names = ent['par_relations']
+        child_names = ent['chd_relations']
 
-        child_names = self._get_ent_names_from_relations(
-            ent, kb, self.CHILD_REL_LABELS
-        )
         return [
             name_tokens, stemmed_tokens, lemmatized_tokens, character_tokens,
             alias_tokens,
@@ -96,17 +88,9 @@ class FeatureGenerator:
         Generate token maps between two KBs
         :return:
         """
-
-        for s_ent in self.s_kb.entities:
-            self.s_tokens[s_ent.research_entity_id] = self._compute_tokens(
-                s_ent, self.s_kb
-            )
-
-        for t_ent in self.t_kb.entities:
-            self.t_tokens[t_ent.research_entity_id] = self._compute_tokens(
-                t_ent, self.t_kb
-            )
-
+        for ent in self.entity_data:
+            if ent['research_entity_id'] not in self.token_dict:
+                self.token_dict[ent['research_entity_id']] = self._compute_tokens(ent)
         return
 
     def calculate_features(self, s_ent_id, t_ent_id):
@@ -117,11 +101,11 @@ class FeatureGenerator:
         :return:
         """
         s_name_tokens, s_stemmed_tokens, s_lemmatized_tokens, s_char_tokens, \
-        s_alias_tokens, s_parent_names, s_child_names = self.s_tokens[
+        s_alias_tokens, s_parent_names, s_child_names = self.token_dict[
             s_ent_id
         ]
         t_name_tokens, t_stemmed_tokens, t_lemmatized_tokens, t_char_tokens, \
-        t_alias_tokens, t_parent_names, t_child_names = self.t_tokens[
+        t_alias_tokens, t_parent_names, t_child_names = self.token_dict[
             t_ent_id
         ]
 

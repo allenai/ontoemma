@@ -1,8 +1,9 @@
 import os, sys
-import csv
+import jsonlines
 import itertools
 import random
 import glob
+import pickle
 from collections import defaultdict
 from sklearn.model_selection import train_test_split
 
@@ -12,6 +13,7 @@ from emma.paths import StandardFilePath
 from emma.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
 from emma.CandidateSelection import CandidateSelection
 import emma.constants as constants
+from emma.OntoEmma import OntoEmma
 
 
 # class for extracting concept mappings from UMLS
@@ -38,6 +40,7 @@ class UMLSExtractor(App):
     OUTPUT_DIR = paths.ontoemma_umls_output_dir
     OUTPUT_KB_DIR = paths.ontoemma_kb_dir
     TRAINING_DIR = paths.ontoemma_training_dir
+    CONTEXT_DIR = os.path.join(paths.ontoemma_root_dir, 'kb_context')
 
     # name sort order (by preferred name status)
     TTY_sort_order = {"MH": 0, "NM": 0,           # main heading, supplementary concept name
@@ -52,10 +55,6 @@ class UMLSExtractor(App):
     UMLS_REL_INVERSE_STR = 'rel_inverse'
     UMLS_REL_STR = "REL"
     UMLS_NOCODE_STR = 'NOCODE'
-
-    # TRAINING/DEVELOPMENT SPLIT
-    TRAINING_PART = 0.7
-    DEVELOPMENT_PART = 0.3
 
     umls_training_data = [
     ]  # mappings between different pairs of kbs true and false
@@ -295,10 +294,12 @@ class UMLSExtractor(App):
                     new_ent.relation_ids.append(rel_ind)
                 kb.add_entity(new_ent)
 
-            # write KB to json
+            # write plain KB to json
             out_fname = 'kb-{}.json'.format(kb_name)
             kb.dump(kb, os.path.join(self.OUTPUT_KB_DIR, out_fname))
 
+            # add context to kb and write to file
+            self.add_context_to_kb(kb)
         return
 
     def sample_negative_mappings(self, kb1, kb2, tp_mappings):
@@ -324,10 +325,10 @@ class UMLSExtractor(App):
             # get candidates for source entity
             cands = cand_sel.select_candidates(tp[0])[:constants.KEEP_TOP_K_CANDIDATES]
             # sample hard negatives
-            cand = random.sample(cands, min(5, len(cands)))
+            cand = random.sample(cands, min(constants.NUM_HARD_NEGATIVE_PER_POSITIVE, len(cands)))
             cand_negs += [tuple([tp[0], c]) for c in cand]
             # sample easy negatives
-            rand = random.sample(kb2_ent_ids, 5)
+            rand = random.sample(kb2_ent_ids, constants.NUM_EASY_NEGATIVE_PER_POSITIVE)
             rand_negs += [tuple([tp[0], r]) for r in rand]
 
         # filter negatives
@@ -393,56 +394,136 @@ class UMLSExtractor(App):
                     outf.write('%s\n' % training_path)
         return
 
-    def split_training_data(self):
+    @staticmethod
+    def _kb_entity_to_training_json(ent, kb):
         """
-        Process and split training data
+        Given entity and its origin KB, return a json representation of the entiy with extracted parent, children,
+        synonym, and sibling relations represented by canonical_name
+        :param ent:
+        :param kb:
         :return:
         """
-        # alignment files generated from UMLS
-        align_paths = glob.glob(
-            os.path.join(self.OUTPUT_DIR, 'training', '*.tsv')
+        parent_ids = [kb.relations[rel_id].entity_ids[1]
+                      for rel_id in ent.relation_ids
+                      if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
+
+        child_ids = [kb.relations[rel_id].entity_ids[1]
+                     for rel_id in ent.relation_ids
+                     if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
+
+        synonym_ids = [kb.relations[rel_id].entity_ids[1]
+                       for rel_id in ent.relation_ids
+                       if kb.relations[rel_id].relation_type in constants.UMLS_SYNONYM_REL_LABELS]
+
+        sibling_ids = [kb.relations[rel_id].entity_ids[1]
+                       for rel_id in ent.relation_ids
+                       if kb.relations[rel_id].relation_type in constants.UMLS_SIBLING_REL_LABELS]
+
+        parents = [kb.get_entity_by_research_entity_id(i).canonical_name
+                   for i in parent_ids if i in kb.research_entity_id_to_entity_index]
+
+        children = [kb.get_entity_by_research_entity_id(i).canonical_name
+                    for i in child_ids if i in kb.research_entity_id_to_entity_index]
+
+        synonyms = [kb.get_entity_by_research_entity_id(i).canonical_name
+                    for i in synonym_ids if i in kb.research_entity_id_to_entity_index]
+
+        siblings = [kb.get_entity_by_research_entity_id(i).canonical_name
+                    for i in sibling_ids if i in kb.research_entity_id_to_entity_index]
+
+        return {
+            'research_entity_id': ent.research_entity_id,
+            'canonical_name': ent.canonical_name,
+            'aliases': ent.aliases,
+            'definition': ent.definition,
+            'other_contexts': ent.other_contexts,
+            'par_relations': parents,
+            'chd_relations': children,
+            'syn_relations': synonyms,
+            'sib_relations': siblings
+        }
+
+    def split_training_data(self):
+        """
+        Process and split data into training development and test sets
+        :return:
+        """
+        all_kb_names = constants.TRAINING_KBS + constants.DEVELOPMENT_KBS
+        training_file_dir = os.path.join(self.OUTPUT_DIR, 'training')
+
+        output_training_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.train')
+        output_development_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.dev')
+        output_test_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.test')
+
+        context_files = glob.glob(os.path.join(self.OUTPUT_KB_DIR, '*context.json'))
+        context_kbs = [os.path.basename(f).split('-')[1] for f in context_files]
+        training_files = glob.glob(os.path.join(training_file_dir, '*.tsv'))
+        file_names = [os.path.splitext(os.path.basename(f))[0] for f in training_files]
+
+        training_labels = []
+        training_dat = []
+
+        emma = OntoEmma()
+
+        for fname, fpath in zip(file_names, training_files):
+            (kb1_name, kb2_name) = fname.split('-')
+            if kb1_name in all_kb_names and kb2_name in all_kb_names \
+                    and kb1_name in context_kbs and kb2_name in context_kbs:
+                sys.stdout.write("Processing %s and %s\n" % (kb1_name, kb2_name))
+                kb1 = emma.load_kb(
+                    os.path.join(self.OUTPUT_KB_DIR, 'kb-{}-context.json'.format(kb1_name))
+                )
+                kb2 = emma.load_kb(
+                    os.path.join(self.OUTPUT_KB_DIR, 'kb-{}-context.json'.format(kb2_name))
+                )
+                alignment = emma.load_alignment(fpath)
+
+                for (e1, e2, score) in alignment:
+                    kb1_ent = kb1.get_entity_by_research_entity_id(e1)
+                    kb2_ent = kb2.get_entity_by_research_entity_id(e2)
+                    training_labels.append(int(score))
+                    training_dat.append({
+                        "source_entity": self._kb_entity_to_training_json(kb1_ent, kb1),
+                        "target_entity": self._kb_entity_to_training_json(kb2_ent, kb2)
+                    })
+            else:
+                sys.stdout.write("Skipping %s and %s\n" % (kb1_name, kb2_name))
+
+        training_dat, test_dat, training_labels, test_labels = train_test_split(
+            training_dat,
+            training_labels,
+            stratify=training_labels,
+            test_size=constants.TEST_PART
         )
-        alignments = []
 
-        for fpath in align_paths:
-            print(fpath)
-            a = []
-            # read alignments out of file
-            with open(fpath, 'r') as f:
-                reader = csv.reader(f, delimiter='\t')
-                for s_ent, t_ent, label, provenance in reader:
-                    a.append([s_ent, t_ent, int(label), provenance])
-
-            # keep data if long enough
-            if len(a) >= constants.MIN_TRAINING_SET_SIZE:
-                alignments += a
-
-        # alignment labels (1=pos, 0=hard neg, -1=easy neg)
-        labels = [i[2] for i in alignments]
-
-        # use stratified sampling to split alignment data
-        training_pairs, development_pairs, training_labels, development_labels = train_test_split(
-            alignments,
-            labels,
-            stratify=labels,
-            test_size=self.DEVELOPMENT_PART
+        training_dat, development_dat, training_labels, development_labels = train_test_split(
+            training_dat,
+            training_labels,
+            stratify=training_labels,
+            test_size=constants.DEVELOPMENT_PART
         )
 
-        # replace easy negative labels with negative labels (-1 -> 0)
         training_labels = self._replace_negative_labels(training_labels)
         development_labels = self._replace_negative_labels(development_labels)
+        test_labels = self._replace_negative_labels(test_labels)
 
-        # write training set to file
-        with open(os.path.join(self.TRAINING_DIR, 'training_data.tsv'),
-                  'w') as outf:
-            for p, l in zip(training_pairs, training_labels):
-                outf.write('%s\t%s\t%i\t%s\n' % (p[0], p[1], l, p[3]))
+        with jsonlines.open(output_training_data, mode='w') as writer:
+            for label, dat in zip(training_labels, training_dat):
+                writer.write({"label": label,
+                              "source_ent": dat["source_entity"],
+                              "target_ent": dat["target_entity"]})
 
-        # write dev set to file
-        with open(os.path.join(self.TRAINING_DIR, 'development_data.tsv'),
-                  'w') as outf:
-            for p, l in zip(development_pairs, development_labels):
-                outf.write('%s\t%s\t%i\t%s\n' % (p[0], p[1], l, p[3]))
+        with jsonlines.open(output_development_data, mode='w') as writer:
+            for label, dat in zip(development_labels, development_dat):
+                writer.write({"label": label,
+                              "source_ent": dat["source_entity"],
+                              "target_ent": dat["target_entity"]})
+
+        with jsonlines.open(output_test_data, mode='w') as writer:
+            for label, dat in zip(test_labels, test_dat):
+                writer.write({"label": label,
+                              "source_ent": dat["source_entity"],
+                              "target_ent": dat["target_entity"]})
         return
 
     @staticmethod
@@ -491,7 +572,7 @@ class UMLSExtractor(App):
 
         self.umls_training_data = dict()
         mapping_files = glob.glob(
-            os.path.join(self.OUTPUT_DIR, 'training', '*.tsv')
+            os.path.join(self.OUTPUT_DIR, 'mappings', '*.tsv')
         )
         for fpath in mapping_files:
             if fpath not in done_list:
@@ -506,5 +587,35 @@ class UMLSExtractor(App):
                 self.umls_training_data[tuple(names)] = v
         return
 
+    def add_context_to_kb(self, kb):
+        """
+        Iterates through KBs and add context if it exists; save to new json file
+        :return:
+        """
+        if kb.name in constants.TRAINING_KBS + constants.DEVELOPMENT_KBS:
+            context_path = os.path.join(self.CONTEXT_DIR, '{}-contexts.pickle'.format(kb.name))
+            output_path = os.path.join(self.OUTPUT_KB_DIR, 'kb-{}-context.json'.format(kb.name))
+
+            sys.stdout.write("Loading context dict\n")
+            context_dict = pickle.load(open(context_path, 'rb'))
+
+            sys.stdout.write("Adding context to entities\n")
+
+            counter = 0
+            for ent_name, contexts in context_dict.items():
+                if contexts:
+                    counter += 1
+                    ent_matches = kb.get_entity_by_canonical_name(ent_name)
+                    for ent in ent_matches:
+                        ent.other_contexts = list([c for c in contexts if c != ""])
+
+            sys.stdout.write("%i of %i entities w/ context\n" % (counter, len(kb.entities)))
+
+            sys.stdout.write("Writing enriched KB to file\n")
+            kb.dump(kb, output_path)
+        else:
+            sys.stdout.write("%s not a training KB\n" % kb.name)
+
+        return
 
 UMLSExtractor.run(__name__)

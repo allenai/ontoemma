@@ -22,7 +22,7 @@ from emma.allennlp_classes.boolean_field import BooleanField
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-@DatasetReader.register("ontology_matcher")
+@DatasetReader.register("ontology_matcher_nocontext")
 class OntologyMatchingDatasetReader(DatasetReader):
     """
     Reads instances from a jsonlines file where each line is in the following format:
@@ -128,18 +128,31 @@ class OntologyMatchingDatasetReader(DatasetReader):
             self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
         ) if t_ent['definition'] else self._empty_token_text_field
 
-        # add entity context fields
-        s_contexts = sample_n((s_ent['other_contexts'], 20))
-        t_contexts = sample_n((t_ent['other_contexts'], 20))
+        # add parent relation fields
+        s_parrels = sample_n((s_ent['par_relations'], 8))
+        t_parrels = sample_n((t_ent['par_relations'], 8))
 
-        fields['s_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in s_contexts]
-        ) if s_contexts else self._empty_list_token_text_field
-        fields['t_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in t_contexts]
-        ) if t_contexts else self._empty_list_token_text_field
+        fields['s_ent_parents'] = ListField(
+            [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
+             for i in s_parrels]
+        ) if s_parrels else self._empty_list_chartoken_text_field
+        fields['t_ent_parents'] = ListField(
+            [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
+             for i in t_parrels]
+        ) if t_parrels else self._empty_list_chartoken_text_field
+
+        # add child relation fields
+        s_chdrels = sample_n((s_ent['chd_relations'], 8))
+        t_chdrels = sample_n((t_ent['chd_relations'], 8))
+
+        fields['s_ent_children'] = ListField(
+            [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
+             for i in s_chdrels]
+        ) if s_chdrels else self._empty_list_chartoken_text_field
+        fields['t_ent_children'] = ListField(
+            [TextField(self._tokenizer.tokenize(i), self._name_token_indexers)
+             for i in t_chdrels]
+        ) if t_chdrels else self._empty_list_chartoken_text_field
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)

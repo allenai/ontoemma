@@ -1,9 +1,10 @@
-config/*
+.cache/*
 *__pycache__
 .DS_Store
 .idea/*
 tests/.cache/*
 emma.egg-info/*
 emma/.cache/
-
-!config/example_ontoemma_config.json
+tests/data/test_nn_model/*
+/tests/data/test_output_alignment.tsv
+tests/data/*.missed

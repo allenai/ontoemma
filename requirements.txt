@@ -6,3 +6,6 @@ boto3==1.4.7
 scikit-learn==0.19.1
 scipy==1.0.0
 rdflib==4.2.2
+jsonlines==1.2.0
+pandas==0.21.0
+spacy==1.9.0
