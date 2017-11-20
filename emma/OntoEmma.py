@@ -16,7 +16,7 @@ from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
-from emma.FeatureGenerator import FeatureGenerator
+from emma.FeatureGeneratorLR import FeatureGeneratorLR
 from emma.paths import StandardFilePath
 import emma.constants as constants
 
@@ -262,7 +262,7 @@ class OntoEmma:
         sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # initialize feature generator
-        feat_gen = FeatureGenerator([item for sublist in training_pairs for item in sublist])
+        feat_gen = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
 
         # calculate features for training pairs
         for s_ent, t_ent in training_pairs:
@@ -271,7 +271,7 @@ class OntoEmma:
             )
 
         # initialize dev feature generator
-        feat_gen_dev = FeatureGenerator([item for sublist in dev_pairs for item in sublist])
+        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
 
         # calculate features for development pairs
         for s_ent, t_ent in dev_pairs:
@@ -366,7 +366,7 @@ class OntoEmma:
                 eval_labels.append(obj['label'])
 
         # initialize feature generator
-        feat_gen = FeatureGenerator([item for sublist in eval_pairs for item in sublist])
+        feat_gen = FeatureGeneratorLR([item for sublist in eval_pairs for item in sublist])
         eval_features = []
 
         # calculate features for development pairs
@@ -420,7 +420,7 @@ class OntoEmma:
         # Initialize
         alignment = []
 
-        feature_generator = FeatureGenerator(
+        feature_generator = FeatureGeneratorLR(
             [self._form_training_json_entity(ent, source_kb) for ent in source_kb.entities] +
             [self._form_training_json_entity(ent, target_kb) for ent in target_kb.entities]
         )

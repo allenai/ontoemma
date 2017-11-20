@@ -9,13 +9,14 @@ import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 
-# class for generating features between entities of two KBs
-class FeatureGenerator:
-    def __init__(self, data):
+# class for generating features for LR model between entities of two KBs
+class FeatureGeneratorLR:
+    # TODO: instead of tokenizing all entities, generate tokens and features as needed and cache
+    def __init__(self, entity_data):
         self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
         self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
-        self.data = data
+        self.entity_data = entity_data
 
         self.STOP = set(stopwords.words('english'))
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
@@ -87,7 +88,7 @@ class FeatureGenerator:
         Generate token maps between two KBs
         :return:
         """
-        for ent in self.data:
+        for ent in self.entity_data:
             if ent['research_entity_id'] not in self.token_dict:
                 self.token_dict[ent['research_entity_id']] = self._compute_tokens(ent)
         return
