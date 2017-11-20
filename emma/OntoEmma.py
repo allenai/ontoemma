@@ -507,7 +507,7 @@ class OntoEmma:
         normalized_r1 = r1 / np.linalg.norm(r1)
         normalized_r2 = r2 / np.linalg.norm(r2)
 
-        return (normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2))
+        return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
 
 
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=256):
@@ -581,13 +581,15 @@ class OntoEmma:
 
                 # sum regional contributions to similarity
                 global_sum = 0.0
+
                 for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
                     global_sum += self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id]) \
                                   * self._get_rep_similarity(rep_dict[s_neighbor_id], rep_dict[t_neighbor_id])
-                global_sim = global_sum/(len(s_region) + len(t_region))
+                global_similarity = global_sum / (len(s_region) + len(t_region))
 
-                if global_sim >= 0.1:
-                    alignment.append((s_ent_id, t_ent_id, global_sim))
+                # TODO: replace with a LR/SVM model which takes global_similarity as an input feature
+                if global_similarity >= 0.4:
+                    alignment.append((s_ent_id, t_ent_id, global_similarity))
 
         return alignment
 
