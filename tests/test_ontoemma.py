@@ -17,7 +17,7 @@ class TestOntoEmmaAlign(unittest.TestCase):
 
         matcher = OntoEmma()
         matcher.train(
-            'nn', model_path, config_file
+            'nn', model_path, config_file, -1
         )
 
         assert(os.path.exists(os.path.join(model_path, 'model.tar.gz')))
@@ -32,7 +32,8 @@ class TestOntoEmmaAlign(unittest.TestCase):
         p, r, f1 = matcher.align(
             'nn', model_path,
             source_ont_file, target_ont_file,
-            input_alignment_file, output_alignment_file
+            input_alignment_file, output_alignment_file,
+            -1
         )
         assert p >= 0.0
         assert r >= 0.0
@@ -49,7 +50,8 @@ class TestOntoEmmaAlign(unittest.TestCase):
         p, r, f1 = matcher.align(
             'lr', model_path,
             source_ont_file, target_ont_file,
-            input_alignment_file, output_alignment_file
+            input_alignment_file, output_alignment_file,
+            -1
         )
 
         assert p >= 0.8
