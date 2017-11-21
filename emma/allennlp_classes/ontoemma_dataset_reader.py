@@ -138,14 +138,18 @@ class OntologyMatchingDatasetReader(DatasetReader):
         t_name_tokens, t_stemmed_tokens, t_lemmatized_tokens, t_char_tokens, \
         t_alias_tokens, t_parent_names, t_child_names = self._compute_tokens(t_ent)
 
+        has_same_canonical_name = (s_name_tokens == t_name_tokens)
+        has_same_stemmed_name = (s_stemmed_tokens == t_stemmed_tokens)
+        has_same_lemmatized_name = (s_lemmatized_tokens == t_lemmatized_tokens)
+        has_same_char_tokens = (s_char_tokens == t_char_tokens)
+        has_alias_in_common = (len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0)
+
         # boolean features
-        fields['has_same_canonical_name'] = BooleanField((s_name_tokens == t_name_tokens))
-        fields['has_same_stemmed_name'] = BooleanField((s_stemmed_tokens == t_stemmed_tokens))
-        fields['has_same_lemmatized_name'] = BooleanField((s_lemmatized_tokens == t_lemmatized_tokens))
-        fields['has_same_char_tokens'] = BooleanField((s_char_tokens == t_char_tokens))
-        fields['has_alias_in_common'] = BooleanField((
-            len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0
-        ))
+        fields['has_same_canonical_name'] = MetadataField(float(has_same_canonical_name))
+        fields['has_same_stemmed_name'] = MetadataField(float(has_same_stemmed_name))
+        fields['has_same_lemmatized_name'] = MetadataField(float(has_same_lemmatized_name))
+        fields['has_same_char_tokens'] = MetadataField(float(has_same_char_tokens))
+        fields['has_alias_in_common'] = MetadataField(float(has_alias_in_common))
 
         # jaccard similarity and token edit distance
         max_changes = len(s_name_tokens) + len(t_name_tokens)
