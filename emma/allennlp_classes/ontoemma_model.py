@@ -21,8 +21,7 @@ class OntoEmmaNN(Model):
     def __init__(self, vocab: Vocabulary,
                  name_text_field_embedder: TextFieldEmbedder,
                  context_text_field_embedder: TextFieldEmbedder,
-                 name_cnn_encoder: Seq2VecEncoder,
-                 name_boe_encoder: Seq2VecEncoder,
+                 name_rnn_encoder: Seq2VecEncoder,
                  context_encoder: Seq2VecEncoder,
                  siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
@@ -35,8 +34,7 @@ class OntoEmmaNN(Model):
             k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
         })
         self.context_text_field_embedder = context_text_field_embedder
-        self.name_cnn_encoder = name_cnn_encoder
-        self.name_boe_encoder = name_boe_encoder
+        self.name_rnn_encoder = name_rnn_encoder
         self.context_encoder = context_encoder
         self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
@@ -237,8 +235,7 @@ class OntoEmmaNN(Model):
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
         name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
         context_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("context_text_field_embedder"))
-        name_cnn_encoder = Seq2VecEncoder.from_params(params.pop("name_cnn_encoder"))
-        name_boe_encoder = Seq2VecEncoder.from_params(params.pop("name_boe_encoder"))
+        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
         context_encoder = Seq2VecEncoder.from_params(params.pop("context_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
@@ -253,8 +250,7 @@ class OntoEmmaNN(Model):
         return cls(vocab=vocab,
                    name_text_field_embedder=name_text_field_embedder,
                    context_text_field_embedder=context_text_field_embedder,
-                   name_cnn_encoder=name_cnn_encoder,
-                   name_boe_encoder=name_boe_encoder,
+                   name_rnn_encoder=name_rnn_encoder,
                    context_encoder=context_encoder,
                    siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
