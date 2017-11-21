@@ -21,66 +21,9 @@
   "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
   "model": {
     "type": "ontoemmaNN",
-    "name_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-                    "embedding_dim": 100,
-                    "trainable": false
-            },
-            "token_characters": {
-                    "type": "character_encoding",
-                    "embedding": {
-                      "embedding_dim": 50
-                    },
-                    "encoder": {
-                      "type": "cnn",
-                      "embedding_dim": 50,
-                      "num_filters": 50,
-                      "ngram_filter_sizes": [4, 5]
-                    },
-                    "dropout": 0.2
-            }
-    },
-    "context_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-                    "embedding_dim": 100,
-                    "trainable": false
-            }
-    },
-    "name_rnn_encoder": {
-      "type": "rnn",
-      "input_size": 200,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
-    },
-    "name_boe_encoder": {
-      "type": "boe",
-      "embedding_dim": 100,
-      "averaged": true
-    },
-    "context_encoder": {
-      "type": "lstm",
-      "input_size": 100,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
-    },
-    "siamese_feedforward": {
-      "input_dim": 400,
-      "num_layers": 2,
-      "hidden_dims": 100,
-      "activations": "relu",
-      "dropout": 0.2
-    },
     "decision_feedforward": {
-      "input_dim": 204,
-      "num_layers": 2,
+      "input_dim": 17,
+      "num_layers": 4,
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],
       "dropout": [0.2, 0.0]
@@ -91,16 +34,7 @@
      ]
   },
   "iterator": {
-    "type": "bucket",
-    "sorting_keys": [
-                     ["s_ent_context", "num_tokens"],
-                     ["t_ent_context", "num_tokens"],
-                     ["s_ent_def", "num_tokens"],
-                     ["t_ent_def", "num_tokens"],
-                     ["s_ent_aliases", "list_num_tokens"],
-                     ["t_ent_aliases", "list_num_tokens"],
-                     ["s_ent_name", "num_tokens"],
-                     ["t_ent_name", "num_tokens"]],
+    "type": "basic",
     "batch_size": 16
   },
   "trainer": {
