@@ -505,7 +505,7 @@ class OntoEmma:
         return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
 
 
-    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=256):
+    def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
         Align using neural network model
         :param source_kb:
@@ -529,7 +529,12 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        archive = load_archive(model_path, cuda_device=cuda_device)
+        if cuda_device > 0:
+            with device(cuda_device):
+                archive = load_archive(model_path, cuda_device=cuda_device)
+        else:
+            archive = load_archive(model_path, cuda_device=cuda_device)
+
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
         sys.stdout.write("Making predictions...\n")
@@ -537,34 +542,56 @@ class OntoEmma:
         s_ent_tqdm = tqdm.tqdm(source_kb.entities,
                                total=len(source_kb.entities))
 
-        temp_alignments = defaultdict(list)
-        batch_json_data = []
+        if cuda_device > 0:
+            with device(cuda_device):
+                temp_alignments = defaultdict(list)
+                batch_json_data = []
 
-        for s_ent in s_ent_tqdm:
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent.research_entity_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                json_data = {
-                    'source_ent': _form_json_entity(s_ent),
-                    'target_ent': _form_json_entity(t_ent),
-                    'label': 0
-                }
-                batch_json_data.append(json_data)
+                for s_ent in s_ent_tqdm:
+                    for t_ent_id in candidate_selector.select_candidates(
+                            s_ent.research_entity_id
+                    )[:constants.KEEP_TOP_K_CANDIDATES]:
+                        t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                        json_data = {
+                            'source_ent': _form_json_entity(s_ent),
+                            'target_ent': _form_json_entity(t_ent),
+                            'label': 0
+                        }
+                        batch_json_data.append(json_data)
 
-                if len(batch_json_data) == batch_size:
-                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
-                    for model_input, output in zip(batch_json_data, results):
-                        if output['predicted_label'] == [1.0]:
-                            temp_alignments[model_input['source_ent']['research_entity_id']].append(
-                                (model_input['target_ent']['research_entity_id'], output['score'])
-                            )
-                    batch_json_data = []
+                        if len(batch_json_data) == batch_size:
+                            results = predictor.predict_batch_json(batch_json_data, cuda_device)
+                            for model_input, output in zip(batch_json_data, results):
+                                if output['predicted_label'] == [1.0]:
+                                    temp_alignments[model_input['source_ent']['research_entity_id']].append(
+                                        (model_input['target_ent']['research_entity_id'], output['score'])
+                                    )
+                            batch_json_data = []
 
-        for s_ent_id, matches in temp_alignments.values():
-            if matches:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                alignment.append(m_sort[0])
+            for s_ent_id, matches in temp_alignments.values():
+                if matches:
+                    m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                    alignment.append(m_sort[0])
+        else:
+            for s_ent in s_ent_tqdm:
+                s_results = []
+                for t_ent_id in candidate_selector.select_candidates(
+                        s_ent.research_entity_id
+                )[:constants.KEEP_TOP_K_CANDIDATES]:
+                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                    json_data = {
+                        'source_ent': _form_json_entity(s_ent),
+                        'target_ent': _form_json_entity(t_ent),
+                        'label': 0
+                    }
+                    output = predictor.predict_json(json_data, cuda_device)
+                    if output['predicted_label'] == [1.0]:
+                        s_results.append((json_data['source_ent']['research_entity_id'],
+                                          json_data['target_ent']['research_entity_id'],
+                                          output['score']))
+                if s_results:
+                    s_results.sort(key=lambda r: r[2])
+                    alignment.append(s_results[0])
 
         return alignment
 
