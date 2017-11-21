@@ -54,8 +54,6 @@ class OntoEmmaNN(Model):
                 t_ent_aliases: Dict[str, torch.LongTensor],
                 s_ent_def: Dict[str, torch.LongTensor],
                 t_ent_def: Dict[str, torch.LongTensor],
-                s_ent_context: Dict[str, torch.LongTensor],
-                t_ent_context: Dict[str, torch.LongTensor],
                 s_ent_parents: Dict[str, torch.LongTensor],
                 t_ent_parents: Dict[str, torch.LongTensor],
                 s_ent_children: Dict[str, torch.LongTensor],
@@ -107,23 +105,6 @@ class OntoEmmaNN(Model):
 
         def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
 
-        # embed and encode all contexts
-        embedded_s_ent_context = self.context_text_field_embedder(s_ent_context)
-        s_ent_context_mask = get_text_field_mask(s_ent_context)
-        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
-
-        s_ent_context_mask = torch.sum(encoded_s_ent_context, 2) != 0.0
-        averaged_s_ent_context = self.name_boe_encoder(encoded_s_ent_context, s_ent_context_mask)
-
-        embedded_t_ent_context = self.context_text_field_embedder(t_ent_context)
-        t_ent_context_mask = get_text_field_mask(t_ent_context)
-        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
-
-        t_ent_context_mask = torch.sum(encoded_t_ent_context, 2) != 0.0
-        averaged_t_ent_context = self.name_boe_encoder(encoded_t_ent_context, t_ent_context_mask)
-
-        context_similarity = torch.diag(averaged_s_ent_context.mm(averaged_t_ent_context.t()), 0)
-
         # embed and encode all parents
         embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
         s_ent_parents_mask = get_text_field_mask(s_ent_parents)
@@ -163,7 +144,6 @@ class OntoEmmaNN(Model):
             [encoded_s_ent_name,
              averaged_s_ent_aliases,
              encoded_s_ent_def,
-             averaged_s_ent_context,
              averaged_s_ent_parents,
              averaged_s_ent_children
              ],
@@ -172,7 +152,6 @@ class OntoEmmaNN(Model):
             [encoded_t_ent_name,
              averaged_t_ent_aliases,
              encoded_t_ent_def,
-             averaged_t_ent_context,
              averaged_t_ent_parents,
              averaged_t_ent_children
              ],
@@ -187,7 +166,6 @@ class OntoEmmaNN(Model):
             [name_similarity,
              alias_similarity,
              def_similarity,
-             context_similarity,
              parent_similarity,
              children_similarity
              ], dim=-1
