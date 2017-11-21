@@ -568,10 +568,10 @@ class OntoEmma:
                                     )
                             batch_json_data = []
 
-            for s_ent_id, matches in temp_alignments.values():
+            for s_ent_id, matches in temp_alignments.items():
                 if matches:
                     m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                    alignment.append(m_sort[0])
+                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
         else:
             for s_ent in s_ent_tqdm:
                 s_results = []
