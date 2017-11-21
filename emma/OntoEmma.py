@@ -310,11 +310,11 @@ class OntoEmma:
 
         for features, label in zip(eval_features, eval_labels):
             prediction = model.predict_entity_pair(features)
-            if prediction[0][1] > constants.SCORE_THRESHOLD and label == 1:
+            if prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 1:
                 tp += 1
-            elif prediction[0][1] > constants.SCORE_THRESHOLD and label == 0:
+            elif prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 0:
                 fp += 1
-            elif prediction[0][0] > constants.SCORE_THRESHOLD and label == 1:
+            elif prediction[0][0] > constants.LR_SCORE_THRESHOLD and label == 1:
                 fn += 1
             else:
                 tn += 1
@@ -446,7 +446,7 @@ class OntoEmma:
             )[:constants.KEEP_TOP_K_CANDIDATES]:
                 features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
                 score = model.predict_entity_pair(features)
-                if score[0][1] >= constants.SCORE_THRESHOLD:
+                if score[0][1] >= constants.LR_SCORE_THRESHOLD:
                     alignment.append((s_ent_id, t_ent_id, score[0][1]))
 
         return alignment
@@ -465,7 +465,7 @@ class OntoEmma:
         steps = 0
         next_step = [start_ent]
 
-        while steps < constants.SCORE_THRESHOLD:
+        while steps < constants.LR_SCORE_THRESHOLD:
             this_step = next_step
             next_step = []
             for current_ent in this_step:
@@ -576,10 +576,10 @@ class OntoEmma:
         sys.stdout.write("Making predictions...\n")
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
                                total=len(s_ent_ids))
+        temp_alignments = defaultdict(list)
 
         if cuda_device > 0:
             with device(cuda_device):
-                temp_alignments = defaultdict(list)
                 batch_json_data = []
 
                 for s_ent_id in s_ent_tqdm:
@@ -598,18 +598,12 @@ class OntoEmma:
                             for model_input, output in zip(batch_json_data, results):
                                 if output['predicted_label'] == [1.0]:
                                     temp_alignments[model_input['source_ent']['research_entity_id']].append(
-                                        (model_input['target_ent']['research_entity_id'], output['score'])
+                                        (model_input['target_ent']['research_entity_id'], output['score'][0])
                                     )
                             batch_json_data = []
-
-            for s_ent_id, matches in temp_alignments.items():
-                if matches:
-                    m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
         else:
             for s_ent_id in s_ent_tqdm:
                 s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-                s_results = []
                 for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                     t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                     json_data = {
@@ -619,12 +613,16 @@ class OntoEmma:
                     }
                     output = predictor.predict_json(json_data, cuda_device)
                     if output['predicted_label'] == [1.0]:
-                        s_results.append((json_data['source_ent']['research_entity_id'],
-                                          json_data['target_ent']['research_entity_id'],
-                                          output['score']))
-                if s_results:
-                    s_results.sort(key=lambda r: r[2], reverse=True)
-                    alignment.append(s_results[0])
+                        temp_alignments[json_data['source_ent']['research_entity_id']].append(
+                            (json_data['target_ent']['research_entity_id'],
+                             output['score'][0])
+                        )
+
+        for s_ent_id, matches in temp_alignments.items():
+            if len(matches) > 0:
+                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                if m_sort[0][1] >= constants.NN_SCORE_THRESHOLD:
+                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
 
         return alignment
 
