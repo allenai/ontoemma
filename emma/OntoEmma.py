@@ -590,7 +590,7 @@ class OntoEmma:
                                           json_data['target_ent']['research_entity_id'],
                                           output['score']))
                 if s_results:
-                    s_results.sort(key=lambda r: r[2])
+                    s_results.sort(key=lambda r: r[2], reverse=True)
                     alignment.append(s_results[0])
 
         return alignment
