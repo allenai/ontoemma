@@ -528,7 +528,7 @@ class OntoEmma:
             )
 
         for s_id, t_id in itertools.product(s_aliases, t_aliases):
-            if s_aliases[s_id].intersection(t_aliases[t_id]) is not set([]):
+            if len(s_aliases[s_id].intersection(t_aliases[t_id])) > 0:
                 alignment.append((s_id, t_id, 1.0))
                 s_matched.add(s_id)
                 t_matched.add(t_id)
@@ -563,6 +563,7 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         if cuda_device > 0:
             with device(cuda_device):
@@ -583,9 +584,7 @@ class OntoEmma:
 
                 for s_ent_id in s_ent_tqdm:
                     s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-                    for t_ent_id in candidate_selector.select_candidates(
-                            s_ent.research_entity_id
-                    )[:constants.KEEP_TOP_K_CANDIDATES]:
+                    for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                         t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                         json_data = {
                             'source_ent': _form_json_entity(s_ent),
@@ -608,11 +607,10 @@ class OntoEmma:
                     m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
                     alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
         else:
-            for s_ent in s_ent_tqdm:
+            for s_ent_id in s_ent_tqdm:
+                s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
                 s_results = []
-                for t_ent_id in candidate_selector.select_candidates(
-                        s_ent.research_entity_id
-                )[:constants.KEEP_TOP_K_CANDIDATES]:
+                for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                     t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                     json_data = {
                         'source_ent': _form_json_entity(s_ent),
