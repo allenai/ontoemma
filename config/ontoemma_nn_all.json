@@ -58,6 +58,11 @@
       "dropout": 0.2,
       "bidirectional": true
     },
+    "name_boe_encoder": {
+      "type": "boe",
+      "embedding_dim": 100,
+      "averaged": true
+    },
     "context_encoder": {
       "type": "lstm",
       "input_size": 100,
