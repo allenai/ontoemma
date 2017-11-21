@@ -12,6 +12,7 @@ from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from nltk.tokenize import word_tokenize
 
 from torch.cuda import device
 
@@ -504,6 +505,38 @@ class OntoEmma:
 
         return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
 
+    @staticmethod
+    def _align_string_equiv(s_kb, t_kb):
+        """
+        Align entities in two KBs using string equivalence
+        :param s_kb:
+        :param t_kb:
+        :return:
+        """
+        alignment = []
+        s_aliases = dict()
+        t_aliases = dict()
+        s_matched = set([])
+        t_matched = set([])
+        for s_ent in s_kb.entities:
+            s_aliases[s_ent.research_entity_id] = set(
+                [a.lower().replace('_', ' ').replace('-', '') for a in s_ent.aliases]
+            )
+        for t_ent in t_kb.entities:
+            t_aliases[t_ent.research_entity_id] = set(
+                [a.lower().replace('_', ' ').replace('-', '') for a in t_ent.aliases]
+            )
+
+        for s_id, t_id in itertools.product(s_aliases, t_aliases):
+            if s_aliases[s_id].intersection(t_aliases[t_id]) is not set([]):
+                alignment.append((s_id, t_id, 1.0))
+                s_matched.add(s_id)
+                t_matched.add(t_id)
+
+        s_remaining = set([e.research_entity_id for e in s_kb.entities]).difference(s_matched)
+        t_remaining = set([e.research_entity_id for e in t_kb.entities]).difference(t_matched)
+
+        return alignment, s_remaining, t_remaining
 
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
@@ -529,6 +562,8 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+
         if cuda_device > 0:
             with device(cuda_device):
                 archive = load_archive(model_path, cuda_device=cuda_device)
@@ -538,16 +573,16 @@ class OntoEmma:
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
         sys.stdout.write("Making predictions...\n")
-        alignment = []
-        s_ent_tqdm = tqdm.tqdm(source_kb.entities,
-                               total=len(source_kb.entities))
+        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
+                               total=len(s_ent_ids))
 
         if cuda_device > 0:
             with device(cuda_device):
                 temp_alignments = defaultdict(list)
                 batch_json_data = []
 
-                for s_ent in s_ent_tqdm:
+                for s_ent_id in s_ent_tqdm:
+                    s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
                     for t_ent_id in candidate_selector.select_candidates(
                             s_ent.research_entity_id
                     )[:constants.KEEP_TOP_K_CANDIDATES]:
