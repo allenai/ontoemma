@@ -144,6 +144,32 @@ class OntologyMatchingDatasetReader(DatasetReader):
              for c in t_contexts]
         )
 
+        # add entity parent fields
+        s_parents = sample_n(s_ent['par_relations'], 8, 128)
+        t_parents = sample_n(t_ent['par_relations'], 8, 128)
+
+        fields['s_ent_parents'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + i), self._name_token_indexers)
+             for i in s_parents]
+        )
+        fields['t_ent_parents'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + i), self._name_token_indexers)
+             for i in t_parents]
+        )
+
+        # add entity children fields
+        s_children = sample_n(s_ent['chd_relations'], 8, 128)
+        t_children = sample_n(t_ent['chd_relations'], 8, 128)
+
+        fields['s_ent_children'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + i), self._name_token_indexers)
+             for i in s_children]
+        )
+        fields['t_ent_children'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 00000 00000 00000 ' + i), self._name_token_indexers)
+             for i in t_children]
+        )
+
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
 

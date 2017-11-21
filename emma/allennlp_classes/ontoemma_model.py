@@ -46,51 +46,6 @@ class OntoEmmaNN(Model):
 
         initializer(self)
 
-    @staticmethod
-    def _get_max_sim(s_stack, t_stack):
-        """
-        Get max similarity of each pair of corresponding entries from two ListFields
-        :param s_stack:
-        :param t_stack:
-        :return: max similarities, best field in s (max sim), best field in t (max sim)
-        """
-        max_vals = []
-        best_s = []
-        best_t = []
-
-        for s_entry, t_entry in zip(s_stack, t_stack):
-            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
-            if s_maxvals.dim() == 1:
-                s_max = torch.max(s_maxvals)
-                tidx = 0
-            else:
-                s_max, tidx = torch.max(s_maxvals, 1)
-            sidx = sidx.squeeze()[tidx]
-            max_vals.append(s_max)
-            best_s.append(s_entry[sidx].squeeze())
-            best_t.append(t_entry[tidx].squeeze())
-
-        return torch.stack(max_vals, 0).squeeze(-1), \
-               torch.stack(best_s, 0), torch.stack(best_t, 0)
-
-    @staticmethod
-    def _get_avg(stack):
-        """
-        Compute average over non-zero entries
-        :param stack:
-        :return:
-        """
-        avg_vec = []
-        for entry in stack:
-            sums = torch.sum(entry, 1)
-            nonzero = torch.nonzero(sums.data).size()
-            if len(nonzero) > 0:
-                avg_vec.append(torch.sum(entry, 0) / nonzero[0])
-            else:
-                avg_vec.append(entry[0])
-
-        return torch.stack(avg_vec, 0)
-
     @overrides
     def forward(self,  # type: ignore
                 s_ent_name: Dict[str, torch.LongTensor],
@@ -101,6 +56,10 @@ class OntoEmmaNN(Model):
                 t_ent_def: Dict[str, torch.LongTensor],
                 s_ent_context: Dict[str, torch.LongTensor],
                 t_ent_context: Dict[str, torch.LongTensor],
+                s_ent_parents: Dict[str, torch.LongTensor],
+                t_ent_parents: Dict[str, torch.LongTensor],
+                s_ent_children: Dict[str, torch.LongTensor],
+                t_ent_children: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -165,19 +124,57 @@ class OntoEmmaNN(Model):
 
         context_similarity = torch.diag(averaged_s_ent_context.mm(averaged_t_ent_context.t()), 0)
 
+        # embed and encode all parents
+        embedded_s_ent_parents = self.distributed_name_embedder(s_ent_parents)
+        s_ent_parents_mask = get_text_field_mask(s_ent_parents)
+        encoded_s_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_parents, s_ent_parents_mask)
+
+        s_ent_parents_mask = torch.sum(encoded_s_ent_parents, 2) != 0.0
+        averaged_s_ent_parents = self.name_boe_encoder(encoded_s_ent_parents, s_ent_parents_mask)
+
+        embedded_t_ent_parents = self.distributed_name_embedder(t_ent_parents)
+        t_ent_parents_mask = get_text_field_mask(t_ent_parents)
+        encoded_t_ent_parents = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_parents, t_ent_parents_mask)
+
+        t_ent_parents_mask = torch.sum(encoded_t_ent_parents, 2) != 0.0
+        averaged_t_ent_parents = self.name_boe_encoder(encoded_t_ent_parents, t_ent_parents_mask)
+
+        parent_similarity = torch.diag(averaged_s_ent_parents.mm(averaged_t_ent_parents.t()), 0)
+
+        # embed and encode all children
+        embedded_s_ent_children = self.distributed_name_embedder(s_ent_children)
+        s_ent_children_mask = get_text_field_mask(s_ent_children)
+        encoded_s_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_children, s_ent_children_mask)
+
+        s_ent_children_mask = torch.sum(encoded_s_ent_children, 2) != 0.0
+        averaged_s_ent_children = self.name_boe_encoder(encoded_s_ent_children, s_ent_children_mask)
+
+        embedded_t_ent_children = self.distributed_name_embedder(t_ent_children)
+        t_ent_children_mask = get_text_field_mask(t_ent_children)
+        encoded_t_ent_children = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_children, t_ent_children_mask)
+
+        t_ent_children_mask = torch.sum(encoded_t_ent_children, 2) != 0.0
+        averaged_t_ent_children = self.name_boe_encoder(encoded_t_ent_children, t_ent_children_mask)
+
+        children_similarity = torch.diag(averaged_s_ent_children.mm(averaged_t_ent_children.t()), 0)
+
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
              averaged_s_ent_aliases,
              encoded_s_ent_def,
-             averaged_s_ent_context
+             averaged_s_ent_context,
+             averaged_s_ent_parents,
+             averaged_s_ent_children
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
              averaged_t_ent_aliases,
              encoded_t_ent_def,
-             averaged_t_ent_context
+             averaged_t_ent_context,
+             averaged_t_ent_parents,
+             averaged_t_ent_children
              ],
             dim=-1)
 
@@ -190,7 +187,9 @@ class OntoEmmaNN(Model):
             [name_similarity,
              alias_similarity,
              def_similarity,
-             context_similarity
+             context_similarity,
+             parent_similarity,
+             children_similarity
              ], dim=-1
         )
 
