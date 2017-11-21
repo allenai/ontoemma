@@ -9,12 +9,15 @@ import random
 from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.file_utils import cached_path
-from allennlp.data.fields import Field, TextField, ListField, MetadataField
+from allennlp.data.tokenizers import Tokenizer, WordTokenizer
+from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
+from allennlp.data.fields import Field, TextField, ListField
 from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 
 from emma.allennlp_classes.boolean_field import BooleanField
+from emma.allennlp_classes.float_field import FloatField
 
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
@@ -120,16 +123,6 @@ class OntologyMatchingDatasetReader(DatasetReader):
                          t_ent: dict,
                          label: str = None) -> Instance:
 
-        # sample n from list l, keeping only entries with len less than max_len
-        # if n is greater than the length of l, just return l
-        def sample_n(l, n, max_len):
-            l = [i for i in l if len(i) <= max_len]
-            if not l:
-                return ['00000']
-            if len(l) <= n:
-                return l
-            return random.sample(l, n)
-
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
 
@@ -145,57 +138,57 @@ class OntologyMatchingDatasetReader(DatasetReader):
         has_alias_in_common = (len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0)
 
         # boolean features
-        fields['has_same_canonical_name'] = MetadataField(float(has_same_canonical_name))
-        fields['has_same_stemmed_name'] = MetadataField(float(has_same_stemmed_name))
-        fields['has_same_lemmatized_name'] = MetadataField(float(has_same_lemmatized_name))
-        fields['has_same_char_tokens'] = MetadataField(float(has_same_char_tokens))
-        fields['has_alias_in_common'] = MetadataField(float(has_alias_in_common))
+        fields['has_same_canonical_name'] = BooleanField(has_same_canonical_name)
+        fields['has_same_stemmed_name'] = BooleanField(has_same_stemmed_name)
+        fields['has_same_lemmatized_name'] = BooleanField(has_same_lemmatized_name)
+        fields['has_same_char_tokens'] = BooleanField(has_same_char_tokens)
+        fields['has_alias_in_common'] = BooleanField(has_alias_in_common)
 
         # jaccard similarity and token edit distance
         max_changes = len(s_name_tokens) + len(t_name_tokens)
         max_char_changes = len(s_char_tokens) + len(t_char_tokens)
 
         if fields['has_same_canonical_name']:
-            fields['name_token_jaccard'] = MetadataField(1.0)
-            fields['inverse_name_edit_distance'] = MetadataField(1.0)
+            fields['name_token_jaccard'] = FloatField(1.0)
+            fields['inverse_name_edit_distance'] = FloatField(1.0)
         else:
-            fields['name_token_jaccard'] = MetadataField(string_utils.get_jaccard_similarity(
+            fields['name_token_jaccard'] = FloatField(string_utils.get_jaccard_similarity(
                 set(s_name_tokens), set(t_name_tokens)
             ))
-            fields['inverse_name_edit_distance'] = MetadataField(1.0 - edit_distance(
+            fields['inverse_name_edit_distance'] = FloatField(1.0 - edit_distance(
                 s_name_tokens, t_name_tokens
             ) / max_changes)
 
         if fields['has_same_stemmed_name']:
-            fields['stemmed_token_jaccard'] = MetadataField(1.0)
-            fields['inverse_stemmed_edit_distance'] = MetadataField(1.0)
+            fields['stemmed_token_jaccard'] = FloatField(1.0)
+            fields['inverse_stemmed_edit_distance'] = FloatField(1.0)
         else:
-            fields['stemmed_token_jaccard'] = MetadataField(string_utils.get_jaccard_similarity(
+            fields['stemmed_token_jaccard'] = FloatField(string_utils.get_jaccard_similarity(
                 set(s_stemmed_tokens), set(t_stemmed_tokens)
             ))
-            fields['inverse_stemmed_edit_distance'] = MetadataField(1.0 - edit_distance(
+            fields['inverse_stemmed_edit_distance'] = FloatField(1.0 - edit_distance(
                 s_stemmed_tokens, t_stemmed_tokens
             ) / max_changes)
 
         if fields['has_same_lemmatized_name']:
-            fields['lemmatized_token_jaccard'] = MetadataField(1.0)
-            fields['inverse_lemmatized_edit_distance'] = MetadataField(1.0)
+            fields['lemmatized_token_jaccard'] = FloatField(1.0)
+            fields['inverse_lemmatized_edit_distance'] = FloatField(1.0)
         else:
-            fields['lemmatized_token_jaccard'] = MetadataField(string_utils.get_jaccard_similarity(
+            fields['lemmatized_token_jaccard'] = FloatField(string_utils.get_jaccard_similarity(
                 set(s_lemmatized_tokens), set(t_lemmatized_tokens)
             ))
-            fields['inverse_lemmatized_edit_distance'] = MetadataField(1.0 - edit_distance(
+            fields['inverse_lemmatized_edit_distance'] = FloatField(1.0 - edit_distance(
                 s_lemmatized_tokens, t_lemmatized_tokens
             ) / max_changes)
 
         if fields['has_same_char_tokens']:
-            fields['char_token_jaccard'] = MetadataField(1.0)
-            fields['inverse_char_token_edit_distance'] = MetadataField(1.0)
+            fields['char_token_jaccard'] = FloatField(1.0)
+            fields['inverse_char_token_edit_distance'] = FloatField(1.0)
         else:
-            fields['char_token_jaccard'] = MetadataField(string_utils.get_jaccard_similarity(
+            fields['char_token_jaccard'] = FloatField(string_utils.get_jaccard_similarity(
                 set(s_char_tokens), set(t_char_tokens)
             ))
-            fields['inverse_char_token_edit_distance'] = MetadataField(1 - edit_distance(
+            fields['inverse_char_token_edit_distance'] = FloatField(1 - edit_distance(
                 s_char_tokens, t_char_tokens
             ) / max_char_changes)
 
@@ -217,8 +210,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
                         if e_dist < min_alias_edit_distance:
                             min_alias_edit_distance = e_dist
 
-        fields['max_alias_token_jaccard'] = MetadataField(max_alias_token_jaccard)
-        fields['inverse_min_alias_edit_distance'] = MetadataField(1.0 - min_alias_edit_distance)
+        fields['max_alias_token_jaccard'] = FloatField(max_alias_token_jaccard)
+        fields['inverse_min_alias_edit_distance'] = FloatField(1.0 - min_alias_edit_distance)
 
         # has any relationships
         has_parents = (len(s_parent_names) > 0 and len(t_parent_names) > 0)
@@ -240,8 +233,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
                 s_child_names.intersection(t_child_names)
             ) / max_children_in_common
 
-        fields['percent_parents_in_common'] = MetadataField(percent_parents_in_common)
-        fields['percent_children_in_common'] = MetadataField(percent_children_in_common)
+        fields['percent_parents_in_common'] = FloatField(percent_parents_in_common)
+        fields['percent_children_in_common'] = FloatField(percent_children_in_common)
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
