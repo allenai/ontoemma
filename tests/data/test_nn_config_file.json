@@ -46,11 +46,13 @@
         "embedding_dim": 100
       }
     },
-    "name_cnn_encoder": {
-      "type": "cnn",
-      "embedding_dim": 200,
-      "num_filters": 50,
-      "ngram_filter_sizes": [3,4]
+    "name_rnn_encoder": {
+      "type": "rnn",
+      "input_size": 200,
+      "hidden_size": 50,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "bidirectional": true
     },
     "name_boe_encoder": {
       "type": "boe",
@@ -58,9 +60,12 @@
       "averaged": true
     },
     "context_encoder": {
-      "type": "boe",
-      "embedding_dim": 100,
-      "averaged": true
+      "type": "lstm",
+      "input_size": 100,
+      "hidden_size": 50,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "bidirectional": true
     },
     "siamese_feedforward": {
       "input_dim": 400,
@@ -84,8 +89,8 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                     ["s_ent_context", "list_num_tokens"],
-                     ["t_ent_context", "list_num_tokens"],
+                     ["s_ent_context", "num_tokens"],
+                     ["t_ent_context", "num_tokens"],
                      ["s_ent_def", "num_tokens"],
                      ["t_ent_def", "num_tokens"],
                      ["s_ent_aliases", "list_num_tokens"],

@@ -72,14 +72,14 @@
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 300,
+      "input_dim": 400,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
       "dropout": 0.2
     },
     "decision_feedforward": {
-      "input_dim": 203,
+      "input_dim": 204,
       "num_layers": 2,
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],
@@ -93,6 +93,8 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
+                     ["s_ent_context", "num_tokens"],
+                     ["t_ent_context", "num_tokens"],
                      ["s_ent_def", "num_tokens"],
                      ["t_ent_def", "num_tokens"],
                      ["s_ent_aliases", "list_num_tokens"],
