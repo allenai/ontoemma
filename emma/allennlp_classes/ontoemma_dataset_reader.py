@@ -18,6 +18,14 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 
 from emma.allennlp_classes.boolean_field import BooleanField
 
+from nltk.corpus import stopwords
+from nltk.tokenize import RegexpTokenizer
+from nltk.metrics.distance import edit_distance
+from nltk.stem.snowball import SnowballStemmer
+from nltk.stem.wordnet import WordNetLemmatizer
+import emma.utils.string_utils as string_utils
+import emma.constants as constants
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -84,6 +92,36 @@ class OntologyMatchingDatasetReader(DatasetReader):
                                      "Is the path correct?".format(file_path))
         return Dataset(instances)
 
+    def _compute_tokens(self, ent):
+        """
+        Compute tokens from given entity
+        :param ent:
+        :return:
+        """
+        name_string = string_utils.normalize_string(ent['canonical_name'])
+        name_tokens = string_utils.tokenize_string(name_string, self.tokenizer, self.STOP)
+        stemmed_tokens = tuple([self.stemmer.stem(w) for w in name_tokens])
+        lemmatized_tokens = tuple([self.lemmatizer.lemmatize(w) for w in name_tokens])
+        character_tokens = tuple(string_utils.get_character_n_grams(
+            name_string, constants.NGRAM_SIZE
+        ))
+
+        alias_tokens = []
+
+        for a in ent['aliases']:
+            alias_tokens.append(string_utils.tokenize_string(
+                string_utils.normalize_string(a), self.tokenizer, self.STOP))
+
+        parent_names = ent['par_relations']
+        child_names = ent['chd_relations']
+
+        return [
+            name_tokens, stemmed_tokens, lemmatized_tokens, character_tokens,
+            alias_tokens,
+            set(parent_names),
+            set(child_names)
+        ]
+
     @overrides
     def text_to_instance(self,  # type: ignore
                          s_ent: dict,
@@ -102,47 +140,112 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
-        # tokenize names
-        s_name_tokens = self._tokenizer.tokenize('00000 ' + s_ent['canonical_name'])
-        t_name_tokens = self._tokenizer.tokenize('00000 ' + t_ent['canonical_name'])
 
-        # add entity name fields
-        fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
-        fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
+        s_name_tokens, s_stemmed_tokens, s_lemmatized_tokens, s_char_tokens, \
+        s_alias_tokens, s_parent_names, s_child_names = self._compute_tokens(s_ent)
+        t_name_tokens, t_stemmed_tokens, t_lemmatized_tokens, t_char_tokens, \
+        t_alias_tokens, t_parent_names, t_child_names = self._compute_tokens(t_ent)
 
-        s_aliases = sample_n(s_ent['aliases'], 16, 128)
-        t_aliases = sample_n(t_ent['aliases'], 16, 128)
-
-        # add entity alias fields
-        fields['s_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
-             for a in s_aliases]
-        )
-        fields['t_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
-             for a in t_aliases]
+        # boolean features
+        fields['has_same_canonical_name'] = (s_name_tokens == t_name_tokens)
+        fields['has_same_stemmed_name'] = (s_stemmed_tokens == t_stemmed_tokens)
+        fields['has_same_lemmatized_name'] = (s_lemmatized_tokens == t_lemmatized_tokens)
+        fields['has_same_char_tokens'] = (s_char_tokens == t_char_tokens)
+        fields['has_alias_in_common'] = (
+            len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0
         )
 
-        # add entity definition fields
-        fields['s_ent_def'] = TextField(
-            self._tokenizer.tokenize(s_ent['definition']), self._token_only_indexer
-        ) if s_ent['definition'] else self._empty_token_text_field
-        fields['t_ent_def'] = TextField(
-            self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
-        ) if t_ent['definition'] else self._empty_token_text_field
+        # jaccard similarity and token edit distance
+        max_changes = len(s_name_tokens) + len(t_name_tokens)
+        max_char_changes = len(s_char_tokens) + len(t_char_tokens)
 
-        # add entity context fields
-        s_contexts = sample_n(s_ent['other_contexts'], 16, 256)
-        t_contexts = sample_n(t_ent['other_contexts'], 16, 256)
+        if fields['has_same_canonical_name']:
+            fields['name_token_jaccard'] = 1.0
+            fields['inverse_name_edit_distance'] = 1.0
+        else:
+            fields['name_token_jaccard'] = string_utils.get_jaccard_similarity(
+                set(s_name_tokens), set(t_name_tokens)
+            )
+            fields['inverse_name_edit_distance'] = 1.0 - edit_distance(
+                s_name_tokens, t_name_tokens
+            ) / max_changes
 
-        fields['s_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in s_contexts]
-        )
-        fields['t_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in t_contexts]
-        )
+        if fields['has_same_stemmed_name']:
+            fields['stemmed_token_jaccard'] = 1.0
+            fields['inverse_stemmed_edit_distance'] = 1.0
+        else:
+            fields['stemmed_token_jaccard'] = string_utils.get_jaccard_similarity(
+                set(s_stemmed_tokens), set(t_stemmed_tokens)
+            )
+            fields['inverse_stemmed_edit_distance'] = 1.0 - edit_distance(
+                s_stemmed_tokens, t_stemmed_tokens
+            ) / max_changes
+
+        if fields['has_same_lemmatized_name']:
+            fields['lemmatized_token_jaccard'] = 1.0
+            fields['inverse_lemmatized_edit_distance'] = 1.0
+        else:
+            fields['lemmatized_token_jaccard'] = string_utils.get_jaccard_similarity(
+                set(s_lemmatized_tokens), set(t_lemmatized_tokens)
+            )
+            fields['inverse_lemmatized_edit_distance'] = 1.0 - edit_distance(
+                s_lemmatized_tokens, t_lemmatized_tokens
+            ) / max_changes
+
+        if fields['has_same_char_tokens']:
+            fields['char_token_jaccard'] = 1.0
+            fields['inverse_char_token_edit_distance'] = 1.0
+        else:
+            fields['char_token_jaccard'] = string_utils.get_jaccard_similarity(
+                set(s_char_tokens), set(t_char_tokens)
+            )
+            fields['inverse_char_token_edit_distance'] = 1 - edit_distance(
+                s_char_tokens, t_char_tokens
+            ) / max_char_changes
+
+        max_alias_token_jaccard = 0.0
+        min_alias_edit_distance = 1.0
+
+        if not fields['has_alias_in_common']:
+            for s_a_tokens in s_alias_tokens:
+                for t_a_tokens in t_alias_tokens:
+                    if s_a_tokens and t_a_tokens:
+                        j_ind = string_utils.get_jaccard_similarity(
+                            set(s_a_tokens), set(t_a_tokens)
+                        )
+                        if j_ind > max_alias_token_jaccard:
+                            max_alias_token_jaccard = j_ind
+                        e_dist = edit_distance(s_a_tokens, t_a_tokens) / (
+                            len(s_a_tokens) + len(t_a_tokens)
+                        )
+                        if e_dist < min_alias_edit_distance:
+                            min_alias_edit_distance = e_dist
+
+        fields['max_alias_token_jaccard'] = max_alias_token_jaccard
+        fields['inverse_min_alias_edit_distance'] = 1.0 - min_alias_edit_distance
+
+        # has any relationships
+        has_parents = (len(s_parent_names) > 0 and len(t_parent_names) > 0)
+        has_children = (len(s_child_names) > 0 and len(t_child_names) > 0)
+
+        percent_parents_in_common = 0.0
+        percent_children_in_common = 0.0
+
+        # any relationships in common
+        if has_parents:
+            max_parents_in_common = (len(s_parent_names) + len(t_parent_names)) / 2
+            percent_parents_in_common = len(
+                s_parent_names.intersection(t_parent_names)
+            ) / max_parents_in_common
+
+        if has_children:
+            max_children_in_common = (len(s_child_names) + len(t_child_names)) / 2
+            percent_children_in_common = len(
+                s_child_names.intersection(t_child_names)
+            ) / max_children_in_common
+
+        fields['percent_parents_in_common'] = percent_parents_in_common
+        fields['percent_children_in_common'] = percent_children_in_common
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
