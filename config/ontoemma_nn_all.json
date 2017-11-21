@@ -8,10 +8,10 @@
     "type": "ontoemmaNN",
     "decision_feedforward": {
       "input_dim": 17,
-      "num_layers": 4,
-      "hidden_dims": [200, 1],
-      "activations": ["relu", "linear"],
-      "dropout": [0.2, 0.0]
+      "num_layers": 3,
+      "hidden_dims": [200, 200, 1],
+      "activations": ["relu", "relu", "linear"],
+      "dropout": [0.2, 0.2, 0.0]
     },
     "initializer": [
       [".*linear_layers.*weight", {"type": "xavier_normal"}],
