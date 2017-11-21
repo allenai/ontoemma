@@ -72,14 +72,14 @@
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 400,
+      "input_dim": 300,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
       "dropout": 0.2
     },
     "decision_feedforward": {
-      "input_dim": 204,
+      "input_dim": 203,
       "num_layers": 2,
       "hidden_dims": [200, 1],
       "activations": ["relu", "linear"],

@@ -99,8 +99,6 @@ class OntoEmmaNN(Model):
                 t_ent_aliases: Dict[str, torch.LongTensor],
                 s_ent_def: Dict[str, torch.LongTensor],
                 t_ent_def: Dict[str, torch.LongTensor],
-                s_ent_context: Dict[str, torch.LongTensor],
-                t_ent_context: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -148,36 +146,17 @@ class OntoEmmaNN(Model):
 
         def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
 
-        # embed and encode all contexts
-        embedded_s_ent_context = self.context_text_field_embedder(s_ent_context)
-        s_ent_context_mask = get_text_field_mask(s_ent_context)
-        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
-
-        s_ent_context_mask = torch.sum(encoded_s_ent_context, 2) != 0.0
-        averaged_s_ent_context = self.name_boe_encoder(encoded_s_ent_context, s_ent_context_mask)
-
-        embedded_t_ent_context = self.context_text_field_embedder(t_ent_context)
-        t_ent_context_mask = get_text_field_mask(t_ent_context)
-        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
-
-        t_ent_context_mask = torch.sum(encoded_t_ent_context, 2) != 0.0
-        averaged_t_ent_context = self.name_boe_encoder(encoded_t_ent_context, t_ent_context_mask)
-
-        context_similarity = torch.diag(averaged_s_ent_context.mm(averaged_t_ent_context.t()), 0)
-
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
              averaged_s_ent_aliases,
-             encoded_s_ent_def,
-             averaged_s_ent_context
+             encoded_s_ent_def
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
              averaged_t_ent_aliases,
-             encoded_t_ent_def,
-             averaged_t_ent_context
+             encoded_t_ent_def
              ],
             dim=-1)
 
@@ -189,8 +168,7 @@ class OntoEmmaNN(Model):
         aggregate_similarity = torch.stack(
             [name_similarity,
              alias_similarity,
-             def_similarity,
-             context_similarity
+             def_similarity
              ], dim=-1
         )
 
