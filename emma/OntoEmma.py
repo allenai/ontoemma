@@ -532,16 +532,13 @@ class OntoEmma:
         archive = load_archive(model_path, cuda_device=cuda_device)
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
 
-        # computing entity representations
-        sys.stdout.write("Computing entity representations...\n")
-        rep_dict = dict()
-
         sys.stdout.write("Making predictions...\n")
         alignment = []
         s_ent_tqdm = tqdm.tqdm(source_kb.entities,
                                total=len(source_kb.entities))
 
         temp_alignments = defaultdict(list)
+        batch_json_data = []
 
         for s_ent in s_ent_tqdm:
             for t_ent_id in candidate_selector.select_candidates(
