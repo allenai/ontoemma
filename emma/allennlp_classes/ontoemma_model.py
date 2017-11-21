@@ -125,8 +125,8 @@ class OntoEmmaNN(Model):
              ], dim=-1
         )
 
-        # concatenate outputs
-        aggregate_input = torch.cat([aggregate_similarity], dim=-1)
+        # squeeze
+        aggregate_input = aggregate_similarity.squeeze(1).float()
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
