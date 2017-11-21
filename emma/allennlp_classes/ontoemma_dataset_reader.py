@@ -138,11 +138,11 @@ class OntologyMatchingDatasetReader(DatasetReader):
         has_alias_in_common = (len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0)
 
         # boolean features
-        fields['has_same_canonical_name'] = BooleanField(has_same_canonical_name)
-        fields['has_same_stemmed_name'] = BooleanField(has_same_stemmed_name)
-        fields['has_same_lemmatized_name'] = BooleanField(has_same_lemmatized_name)
-        fields['has_same_char_tokens'] = BooleanField(has_same_char_tokens)
-        fields['has_alias_in_common'] = BooleanField(has_alias_in_common)
+        fields['has_same_canonical_name'] = FloatField(float(has_same_canonical_name))
+        fields['has_same_stemmed_name'] = FloatField(float(has_same_stemmed_name))
+        fields['has_same_lemmatized_name'] = FloatField(float(has_same_lemmatized_name))
+        fields['has_same_char_tokens'] = FloatField(float(has_same_char_tokens))
+        fields['has_alias_in_common'] = FloatField(float(has_alias_in_common))
 
         # jaccard similarity and token edit distance
         max_changes = len(s_name_tokens) + len(t_name_tokens)
