@@ -9,9 +9,7 @@ import random
 from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.file_utils import cached_path
-from allennlp.data.tokenizers import Tokenizer, WordTokenizer
 from allennlp.data.fields import Field, TextField, ListField
-from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 from allennlp.data.instance import Instance
 from allennlp.data.dataset import Dataset
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
@@ -53,20 +51,14 @@ class OntologyMatchingDatasetReader(DatasetReader):
         Note that the `output` tags will always correspond to single token IDs based on how they
         are pre-tokenised in the data file.
     """
-    def __init__(self,
-                 tokenizer: Tokenizer = None,
-                 name_token_indexers: Dict[str, TokenIndexer] = None,
-                 token_only_indexer: Dict[str, TokenIndexer] = None) -> None:
-        self._name_token_indexers = name_token_indexers or \
-                               {'tokens': SingleIdTokenIndexer(namespace="tokens"),
-                                'token_characters': TokenCharactersIndexer(namespace="token_characters")}
-        self._token_only_indexer = token_only_indexer or \
-                               {'tokens': SingleIdTokenIndexer(namespace="tokens")}
-        self._tokenizer = tokenizer or WordTokenizer()
-        self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
-        self._empty_list_token_text_field = ListField(
-            [TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)]
-        )
+    def __init__(self) -> None:
+        self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
+        self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
+
+        self.STOP = set(stopwords.words('english'))
+        self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
+        self.stemmer = SnowballStemmer("english")
+        self.lemmatizer = WordNetLemmatizer()
 
     @overrides
     def read(self, file_path):
@@ -254,10 +246,5 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
     @classmethod
     def from_params(cls, params: Params) -> 'OntologyMatchingDatasetReader':
-        tokenizer = Tokenizer.from_params(params.pop('tokenizer', {}))
-        name_token_indexers = TokenIndexer.dict_from_params(params.pop('name_token_indexers', {}))
-        token_only_indexer = TokenIndexer.dict_from_params(params.pop('token_only_indexer', {}))
         params.assert_empty(cls.__name__)
-        return OntologyMatchingDatasetReader(tokenizer=tokenizer,
-                                             name_token_indexers=name_token_indexers,
-                                             token_only_indexer=token_only_indexer)
+        return OntologyMatchingDatasetReader()
