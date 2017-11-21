@@ -148,7 +148,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
         max_changes = len(s_name_tokens) + len(t_name_tokens)
         max_char_changes = len(s_char_tokens) + len(t_char_tokens)
 
-        if fields['has_same_canonical_name']:
+        if has_same_canonical_name:
             fields['name_token_jaccard'] = FloatField(1.0)
             fields['inverse_name_edit_distance'] = FloatField(1.0)
         else:
@@ -159,7 +159,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
                 s_name_tokens, t_name_tokens
             ) / max_changes)
 
-        if fields['has_same_stemmed_name']:
+        if has_same_stemmed_name:
             fields['stemmed_token_jaccard'] = FloatField(1.0)
             fields['inverse_stemmed_edit_distance'] = FloatField(1.0)
         else:
@@ -170,7 +170,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
                 s_stemmed_tokens, t_stemmed_tokens
             ) / max_changes)
 
-        if fields['has_same_lemmatized_name']:
+        if has_same_lemmatized_name:
             fields['lemmatized_token_jaccard'] = FloatField(1.0)
             fields['inverse_lemmatized_edit_distance'] = FloatField(1.0)
         else:
@@ -181,7 +181,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
                 s_lemmatized_tokens, t_lemmatized_tokens
             ) / max_changes)
 
-        if fields['has_same_char_tokens']:
+        if has_same_char_tokens:
             fields['char_token_jaccard'] = FloatField(1.0)
             fields['inverse_char_token_edit_distance'] = FloatField(1.0)
         else:
@@ -195,7 +195,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
         max_alias_token_jaccard = 0.0
         min_alias_edit_distance = 1.0
 
-        if not fields['has_alias_in_common']:
+        if not has_alias_in_common:
             for s_a_tokens in s_alias_tokens:
                 for t_a_tokens in t_alias_tokens:
                     if s_a_tokens and t_a_tokens:
