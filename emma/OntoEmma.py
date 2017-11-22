@@ -309,11 +309,11 @@ class OntoEmma:
 
         for features, label in zip(eval_features, eval_labels):
             prediction = model.predict_entity_pair(features)
-            if prediction[0][1] > constants.SCORE_THRESHOLD and label == 1:
+            if prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 1:
                 tp += 1
-            elif prediction[0][1] > constants.SCORE_THRESHOLD and label == 0:
+            elif prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 0:
                 fp += 1
-            elif prediction[0][0] > constants.SCORE_THRESHOLD and label == 1:
+            elif prediction[0][0] > constants.LR_SCORE_THRESHOLD and label == 1:
                 fn += 1
             else:
                 tn += 1
@@ -445,7 +445,7 @@ class OntoEmma:
             )[:constants.KEEP_TOP_K_CANDIDATES]:
                 features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
                 score = model.predict_entity_pair(features)
-                if score[0][1] >= constants.SCORE_THRESHOLD:
+                if score[0][1] >= constants.LR_SCORE_THRESHOLD:
                     alignment.append((s_ent_id, t_ent_id, score[0][1]))
 
         return alignment
@@ -464,7 +464,7 @@ class OntoEmma:
         steps = 0
         next_step = [start_ent]
 
-        while steps < constants.SCORE_THRESHOLD:
+        while steps < constants.LR_SCORE_THRESHOLD:
             this_step = next_step
             next_step = []
             for current_ent in this_step:
