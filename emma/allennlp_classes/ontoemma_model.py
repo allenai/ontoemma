@@ -19,11 +19,20 @@ from emma.allennlp_classes.boolean_f1 import BooleanF1
 class OntoEmmaNN(Model):
 
     def __init__(self, vocab: Vocabulary,
+                 name_text_field_embedder: TextFieldEmbedder,
+                 name_rnn_encoder: Seq2VecEncoder,
+                 siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(OntoEmmaNN, self).__init__(vocab, regularizer)
 
+        self.name_text_field_embedder = name_text_field_embedder
+        self.distributed_name_embedder = BasicTextFieldEmbedder({
+            k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
+        })
+        self.name_rnn_encoder = name_rnn_encoder
+        self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
         self.sigmoid = torch.nn.Sigmoid()
         self.accuracy = BooleanF1()
@@ -76,25 +85,24 @@ class OntoEmmaNN(Model):
 
         return torch.stack(avg_vec, 0)
 
+    @staticmethod
+    def _average_nonzero(t_stack):
+        output_rows = []
+        for row in t_stack:
+            if row.sum().data[0] == 0.0:
+                output_rows.append(row[0])
+            else:
+                output_rows.append(row.sum(0) / ((row.sum(1) != 0.0).sum().data[0]))
+
+        return torch.stack(output_rows)
+
     @overrides
     def forward(self,  # type: ignore
-                has_same_canonical_name: Dict[str, torch.LongTensor],
-                has_same_stemmed_name: Dict[str, torch.LongTensor],
-                has_same_lemmatized_name: Dict[str, torch.LongTensor],
-                has_same_char_tokens: Dict[str, torch.LongTensor],
-                has_alias_in_common: Dict[str, torch.LongTensor],
-                name_token_jaccard: Dict[str, torch.LongTensor],
-                inverse_name_edit_distance: Dict[str, torch.LongTensor],
-                stemmed_token_jaccard: Dict[str, torch.LongTensor],
-                inverse_stemmed_edit_distance: Dict[str, torch.LongTensor],
-                lemmatized_token_jaccard: Dict[str, torch.LongTensor],
-                inverse_lemmatized_edit_distance: Dict[str, torch.LongTensor],
-                char_token_jaccard: Dict[str, torch.LongTensor],
-                inverse_char_token_edit_distance: Dict[str, torch.LongTensor],
-                max_alias_token_jaccard: Dict[str, torch.LongTensor],
-                inverse_min_alias_edit_distance: Dict[str, torch.LongTensor],
-                percent_parents_in_common: Dict[str, torch.LongTensor],
-                percent_children_in_common: Dict[str, torch.LongTensor],
+                lr_features: Dict[str, torch.LongTensor],
+                s_ent_name: Dict[str, torch.LongTensor],
+                t_ent_name: Dict[str, torch.LongTensor],
+                s_ent_aliases: Dict[str, torch.LongTensor],
+                t_ent_aliases: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -103,30 +111,47 @@ class OntoEmmaNN(Model):
         a decision layer.
         """
 
-        # aggregate similarity metrics
-        aggregate_similarity = torch.stack(
-            [has_same_canonical_name,
-             has_same_stemmed_name,
-             has_same_lemmatized_name,
-             has_same_char_tokens,
-             has_alias_in_common,
-             name_token_jaccard,
-             inverse_name_edit_distance,
-             stemmed_token_jaccard,
-             inverse_stemmed_edit_distance,
-             lemmatized_token_jaccard,
-             inverse_lemmatized_edit_distance,
-             char_token_jaccard,
-             inverse_char_token_edit_distance,
-             max_alias_token_jaccard,
-             inverse_min_alias_edit_distance,
-             percent_parents_in_common,
-             percent_children_in_common
-             ], dim=-1
+        # embed and encode entity names
+        embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
+        s_ent_name_mask = get_text_field_mask(s_ent_name)
+        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
+
+        embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
+        t_ent_name_mask = get_text_field_mask(t_ent_name)
+        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
+
+        # embed and encode all aliases
+        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
+        s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
+        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+
+        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
+        t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
+        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+
+        # average across non-zero entries
+        best_alias_similarity, best_s_ent_alias, best_t_ent_alias = self._get_max_sim(
+            encoded_s_ent_aliases, encoded_t_ent_aliases
         )
 
-        # squeeze
-        aggregate_input = aggregate_similarity.squeeze(1).float()
+        # input into feed forward network (placeholder for concatenating other features)
+        s_ent_input = torch.cat(
+            [encoded_s_ent_name,
+             best_s_ent_alias
+             ],
+            dim=-1)
+        t_ent_input = torch.cat(
+            [encoded_t_ent_name,
+             best_t_ent_alias
+             ],
+            dim=-1)
+
+        # run both entity representations through feed forward network
+        s_ent_output = self.siamese_feedforward(s_ent_input)
+        t_ent_output = self.siamese_feedforward(t_ent_input)
+
+        # concatenate outputs
+        aggregate_input = torch.cat([lr_features.squeeze(2).float(), s_ent_output, t_ent_output], dim=-1)
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
@@ -163,6 +188,9 @@ class OntoEmmaNN(Model):
 
     @classmethod
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
+        name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
+        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
+        siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
 
         init_params = params.pop('initializer', None)
@@ -173,6 +201,9 @@ class OntoEmmaNN(Model):
         regularizer = RegularizerApplicator.from_params(reg_params) if reg_params is not None else None
 
         return cls(vocab=vocab,
+                   name_text_field_embedder=name_text_field_embedder,
+                   name_rnn_encoder=name_rnn_encoder,
+                   siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
                    initializer=initializer,
                    regularizer=regularizer)
