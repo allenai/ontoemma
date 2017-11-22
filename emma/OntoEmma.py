@@ -547,15 +547,25 @@ class OntoEmma:
         :param cuda_device: GPU device number
         :return:
         """
-
         # returns json representation of entity
-        def _form_json_entity(ent_to_json):
+        def _form_json_entity(ent_to_json, kb):
+            all_rels = [kb.relations[r_id] for r_id in ent_to_json.relation_ids]
+            par_ents = [
+                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
+                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
+            ]
+            chd_ents = [
+                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
+                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
+            ]
             return {
                 'research_entity_id': ent_to_json.research_entity_id,
                 'canonical_name': ent_to_json.canonical_name,
                 'aliases': ent_to_json.aliases,
                 'definition': ent_to_json.definition,
-                'other_contexts': ent_to_json.other_contexts
+                'other_contexts': ent_to_json.other_contexts,
+                'par_relations': [e.canonical_name for e in par_ents],
+                'chd_relations': [e.canonical_name for e in chd_ents]
             }
 
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
@@ -587,8 +597,8 @@ class OntoEmma:
                     for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                         t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                         json_data = {
-                            'source_ent': _form_json_entity(s_ent),
-                            'target_ent': _form_json_entity(t_ent),
+                            'source_ent': _form_json_entity(s_ent, source_kb),
+                            'target_ent': _form_json_entity(t_ent, target_kb),
                             'label': 0
                         }
                         batch_json_data.append(json_data)
@@ -607,8 +617,8 @@ class OntoEmma:
                 for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                     t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                     json_data = {
-                        'source_ent': _form_json_entity(s_ent),
-                        'target_ent': _form_json_entity(t_ent),
+                        'source_ent': _form_json_entity(s_ent, source_kb),
+                        'target_ent': _form_json_entity(t_ent, target_kb),
                         'label': 0
                     }
                     output = predictor.predict_json(json_data, cuda_device)
