@@ -635,6 +635,8 @@ class OntoEmma:
                              output['score'][0])
                         )
 
+        alignment = []
+
         for s_ent_id, matches in temp_alignments.items():
             if len(matches) > 0:
                 m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
