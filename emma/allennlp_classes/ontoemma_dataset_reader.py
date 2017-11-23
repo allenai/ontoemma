@@ -1,5 +1,6 @@
 from typing import Dict, List
 import logging
+import random
 
 from overrides import overrides
 import json
@@ -54,7 +55,22 @@ class OntologyMatchingDatasetReader(DatasetReader):
         Note that the `output` tags will always correspond to single token IDs based on how they
         are pre-tokenised in the data file.
     """
-    def __init__(self) -> None:
+    def __init__(self,
+                 tokenizer: Tokenizer = None,
+                 name_token_indexers: Dict[str, TokenIndexer] = None,
+                 token_only_indexer: Dict[str, TokenIndexer] = None) -> None:
+        self._name_token_indexers = name_token_indexers or \
+                                    {'tokens': SingleIdTokenIndexer(namespace="tokens"),
+                                     'token_characters': TokenCharactersIndexer(namespace="token_characters")}
+        self._token_only_indexer = token_only_indexer or \
+                                   {'tokens': SingleIdTokenIndexer(namespace="tokens")}
+        self._tokenizer = tokenizer or WordTokenizer()
+
+        self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
+        self._empty_list_token_text_field = ListField([
+            TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
+        ])
+
         self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
         self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
@@ -303,9 +319,62 @@ class OntologyMatchingDatasetReader(DatasetReader):
                          t_ent: dict,
                          label: str = None) -> Instance:
         # pylint: disable=arguments-differ
+
+        # sample n from list l, keeping only entries with len less than max_len
+        # if n is greater than the length of l, just return l
+        def sample_n(l, n, max_len):
+            l = [i for i in l if len(i) <= max_len]
+            if not l:
+                return ['00000']
+            if len(l) <= n:
+                return l
+            return random.sample(l, n)
+
         fields: Dict[str, Field] = {}
 
-        fields['features'] = ListField(self._get_features(self._normalize_ent(s_ent), self._normalize_ent(t_ent)))
+        fields['lr_features'] = ListField(self._get_features(self._normalize_ent(s_ent), self._normalize_ent(t_ent)))
+
+        # tokenize names
+        s_name_tokens = self._tokenizer.tokenize('00000 ' + s_ent['canonical_name'])
+        t_name_tokens = self._tokenizer.tokenize('00000 ' + t_ent['canonical_name'])
+
+        # add entity name fields
+        fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
+        fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
+
+        s_aliases = sample_n((s_ent['aliases'], 16, 128))
+        t_aliases = sample_n((t_ent['aliases'], 16, 128))
+
+        # add entity alias fields
+        fields['s_ent_aliases'] = ListField(
+            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+             for a in s_aliases]
+        )
+        fields['t_ent_aliases'] = ListField(
+            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+             for a in t_aliases]
+        )
+
+        # add entity definition fields
+        fields['s_ent_def'] = TextField(
+            self._tokenizer.tokenize(s_ent['definition']), self._token_only_indexer
+        ) if s_ent['definition'] else self._empty_token_text_field
+        fields['t_ent_def'] = TextField(
+            self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
+        ) if t_ent['definition'] else self._empty_token_text_field
+
+        # add entity context fields
+        s_contexts = sample_n(s_ent['other_contexts'], 16, 256)
+        t_contexts = sample_n(t_ent['other_contexts'], 16, 256)
+
+        fields['s_ent_context'] = ListField(
+            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
+             for c in s_contexts]
+        )
+        fields['t_ent_context'] = ListField(
+            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
+             for c in t_contexts]
+        )
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
@@ -314,5 +383,10 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
     @classmethod
     def from_params(cls, params: Params) -> 'OntologyMatchingDatasetReader':
+        tokenizer = Tokenizer.from_params(params.pop('tokenizer', {}))
+        name_token_indexers = TokenIndexer.dict_from_params(params.pop('name_token_indexers', {}))
+        token_only_indexer = TokenIndexer.dict_from_params(params.pop('token_only_indexer', {}))
         params.assert_empty(cls.__name__)
-        return OntologyMatchingDatasetReader()
+        return OntologyMatchingDatasetReader(tokenizer=tokenizer,
+                                             name_token_indexers=name_token_indexers,
+                                             token_only_indexer=token_only_indexer)
