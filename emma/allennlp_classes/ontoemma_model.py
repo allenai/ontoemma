@@ -17,13 +17,27 @@ from emma.allennlp_classes.boolean_f1 import BooleanF1
 
 @Model.register("ontoemmaNN")
 class OntoEmmaNN(Model):
-
     def __init__(self, vocab: Vocabulary,
+                 name_text_field_embedder: TextFieldEmbedder,
+                 context_text_field_embedder: TextFieldEmbedder,
+                 name_rnn_encoder: Seq2VecEncoder,
+                 name_boe_encoder: Seq2VecEncoder,
+                 context_encoder: Seq2VecEncoder,
+                 siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(OntoEmmaNN, self).__init__(vocab, regularizer)
 
+        self.name_text_field_embedder = name_text_field_embedder
+        self.distributed_name_embedder = BasicTextFieldEmbedder({
+            k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
+        })
+        self.context_text_field_embedder = context_text_field_embedder
+        self.name_rnn_encoder = name_rnn_encoder
+        self.name_boe_encoder = name_boe_encoder
+        self.context_encoder = context_encoder
+        self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
         self.sigmoid = torch.nn.Sigmoid()
         self.accuracy = BooleanF1()
@@ -34,6 +48,14 @@ class OntoEmmaNN(Model):
     @overrides
     def forward(self,  # type: ignore
                 lr_features: Dict[str, torch.LongTensor],
+                s_ent_name: Dict[str, torch.LongTensor],
+                t_ent_name: Dict[str, torch.LongTensor],
+                s_ent_aliases: Dict[str, torch.LongTensor],
+                t_ent_aliases: Dict[str, torch.LongTensor],
+                s_ent_def: Dict[str, torch.LongTensor],
+                t_ent_def: Dict[str, torch.LongTensor],
+                s_ent_context: Dict[str, torch.LongTensor],
+                t_ent_context: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -41,8 +63,95 @@ class OntoEmmaNN(Model):
         all through a feedforward network, aggregate the outputs and run through
         a decision layer.
         """
+
+        # embed and encode entity names
+        embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
+        s_ent_name_mask = get_text_field_mask(s_ent_name)
+        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
+
+        embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
+        t_ent_name_mask = get_text_field_mask(t_ent_name)
+        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
+
+        name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
+
+        # embed and encode all aliases
+        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
+        s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
+        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+
+        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
+        t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
+        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+
+        # average across non-zero entries
+        best_alias_similarity, best_s_ent_alias, best_t_ent_alias = self._get_max_sim(
+            encoded_s_ent_aliases, encoded_t_ent_aliases
+        )
+
+        # embed and encode all definitions
+        embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
+        s_ent_def_mask = get_text_field_mask(s_ent_def)
+        encoded_s_ent_def = self.context_encoder(embedded_s_ent_def, s_ent_def_mask)
+
+        embedded_t_ent_def = self.context_text_field_embedder(t_ent_def)
+        t_ent_def_mask = get_text_field_mask(t_ent_def)
+        encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
+
+        def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
+
+        # embed and encode all contexts
+        embedded_s_ent_context = self.context_text_field_embedder(s_ent_context)
+        s_ent_context_mask = get_text_field_mask(s_ent_context)
+        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
+
+        s_ent_context_mask = torch.sum(encoded_s_ent_context, 2) != 0.0
+        averaged_s_ent_context = self.name_boe_encoder(encoded_s_ent_context, s_ent_context_mask)
+
+        embedded_t_ent_context = self.context_text_field_embedder(t_ent_context)
+        t_ent_context_mask = get_text_field_mask(t_ent_context)
+        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
+
+        t_ent_context_mask = torch.sum(encoded_t_ent_context, 2) != 0.0
+        averaged_t_ent_context = self.name_boe_encoder(encoded_t_ent_context, t_ent_context_mask)
+
+        context_similarity = torch.diag(averaged_s_ent_context.mm(averaged_t_ent_context.t()), 0)
+
+        # input into feed forward network (placeholder for concatenating other features)
+        s_ent_input = torch.cat(
+            [encoded_s_ent_name,
+             best_s_ent_alias,
+             encoded_s_ent_def,
+             averaged_s_ent_context
+             ],
+            dim=-1)
+        t_ent_input = torch.cat(
+            [encoded_t_ent_name,
+             best_t_ent_alias,
+             encoded_t_ent_def,
+             averaged_t_ent_context
+             ],
+            dim=-1)
+
+        # run both entity representations through feed forward network
+        s_ent_output = self.siamese_feedforward(s_ent_input)
+        t_ent_output = self.siamese_feedforward(t_ent_input)
+
+        # aggregate similarity metrics
+        aggregate_embedding_similarity = torch.stack([
+            name_similarity,
+            best_alias_similarity,
+            def_similarity,
+            context_similarity
+        ], dim=-1)
+
         # concatenate outputs
-        aggregate_input = lr_features.squeeze(2).float()
+        aggregate_input = torch.cat([
+            lr_features.squeeze(2).float(),
+            aggregate_embedding_similarity,
+            s_ent_output,
+            t_ent_output
+        ], dim=-1)
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
@@ -79,6 +188,12 @@ class OntoEmmaNN(Model):
 
     @classmethod
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
+        name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
+        context_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("context_text_field_embedder"))
+        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
+        name_boe_encoder = Seq2VecEncoder.from_params(params.pop("name_boe_encoder"))
+        context_encoder = Seq2VecEncoder.from_params(params.pop("context_encoder"))
+        siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
 
         init_params = params.pop('initializer', None)
@@ -89,6 +204,12 @@ class OntoEmmaNN(Model):
         regularizer = RegularizerApplicator.from_params(reg_params) if reg_params is not None else None
 
         return cls(vocab=vocab,
+                   name_text_field_embedder=name_text_field_embedder,
+                   context_text_field_embedder=context_text_field_embedder,
+                   name_rnn_encoder=name_rnn_encoder,
+                   name_boe_encoder=name_boe_encoder,
+                   context_encoder=context_encoder,
+                   siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
                    initializer=initializer,
                    regularizer=regularizer)
