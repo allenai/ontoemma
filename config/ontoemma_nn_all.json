@@ -90,8 +90,8 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                    ["s_ent_context", "num_tokens"],
-                    ["t_ent_context", "num_tokens"],
+                    ["s_ent_context", "list_num_tokens"],
+                    ["t_ent_context", "list_num_tokens"],
                     ["s_ent_def", "num_tokens"],
                     ["t_ent_def", "num_tokens"],
                     ["s_ent_aliases", "list_num_tokens"],

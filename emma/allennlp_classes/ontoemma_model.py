@@ -45,6 +45,62 @@ class OntoEmmaNN(Model):
 
         initializer(self)
 
+    @staticmethod
+    def _get_max_sim(s_stack, t_stack):
+        """
+        Get max similarity of each pair of corresponding entries from two ListFields
+        :param s_stack:
+        :param t_stack:
+        :return: max similarities, best field in s (max sim), best field in t (max sim)
+        """
+        max_vals = []
+        best_s = []
+        best_t = []
+
+        for s_entry, t_entry in zip(s_stack, t_stack):
+            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
+            if s_maxvals.dim() == 1:
+                s_max = torch.max(s_maxvals)
+                tidx = 0
+            else:
+                s_max, tidx = torch.max(s_maxvals, 1)
+            sidx = sidx.squeeze()[tidx]
+            max_vals.append(s_max)
+            best_s.append(s_entry[sidx].squeeze())
+            best_t.append(t_entry[tidx].squeeze())
+
+        return torch.stack(max_vals, 0).squeeze(-1), \
+               torch.stack(best_s, 0), torch.stack(best_t, 0)
+
+    @staticmethod
+    def _get_avg(stack):
+        """
+        Compute average over non-zero entries
+        :param stack:
+        :return:
+        """
+        avg_vec = []
+        for entry in stack:
+            sums = torch.sum(entry, 1)
+            nonzero = torch.nonzero(sums.data).size()
+            if len(nonzero) > 0:
+                avg_vec.append(torch.sum(entry, 0) / nonzero[0])
+            else:
+                avg_vec.append(entry[0])
+
+        return torch.stack(avg_vec, 0)
+
+    @staticmethod
+    def _average_nonzero(t_stack):
+        output_rows = []
+        for row in t_stack:
+            if row.sum().data[0] == 0.0:
+                output_rows.append(row[0])
+            else:
+                output_rows.append(row.sum(0) / ((row.sum(1) != 0.0).sum().data[0]))
+
+        return torch.stack(output_rows)
+
     @overrides
     def forward(self,  # type: ignore
                 lr_features: Dict[str, torch.LongTensor],
