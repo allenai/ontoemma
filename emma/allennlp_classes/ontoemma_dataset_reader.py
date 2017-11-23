@@ -129,9 +129,9 @@ class OntologyMatchingDatasetReader(DatasetReader):
         :return:
         """
         doc = self.nlp(name)
-        root_text = [(token.dep_, token.head.text) for token in doc.token]
+        root_text = [(token.dep_, token.head.text) for token in doc]
         root = [t for d, t in root_text if d == 'ROOT'][0]
-        root_words = set([t[1] for d, t in root_text])
+        root_words = set([t for d, t in root_text])
         return root, root_words
 
     def _get_features(self, s_ent, t_ent):
