@@ -99,7 +99,7 @@
                     ["t_ent_aliases", "list_num_tokens"],
                     ["s_ent_name", "num_tokens"],
                     ["t_ent_name", "num_tokens"]
-    ],
+    ]
   },
   "trainer": {
     "optimizer": "adam",
