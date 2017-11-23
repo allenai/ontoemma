@@ -60,7 +60,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
         self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
         self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
-        self.STOP = set(stopwords.words('english')).update(constants.ADDED_STOP)
+        self.STOP = set(stopwords.words('english'))
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
         self.stemmer = SnowballStemmer("english")
         self.lemmatizer = WordNetLemmatizer()
@@ -97,8 +97,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         norm_ent['canonical_name'] = string_utils.normalize_string(ent['canonical_name'])
         norm_ent['aliases'] = [string_utils.normalize_string(a) for a in ent['aliases']]
         norm_ent['definition'] = string_utils.normalize_string(ent['definition'])
-        norm_ent['par_relations'] = [string_utils.normalize_string(i) for i in ent['par_relations']]
-        norm_ent['chd_relations'] = [string_utils.normalize_string(i) for i in ent['chd_relations']]
+        norm_ent['par_relations'] = set([string_utils.normalize_string(i) for i in ent['par_relations']])
+        norm_ent['chd_relations'] = set([string_utils.normalize_string(i) for i in ent['chd_relations']])
         return norm_ent
 
     def _compute_tokens(self, ent):
@@ -129,9 +129,9 @@ class OntologyMatchingDatasetReader(DatasetReader):
         :return:
         """
         doc = self.nlp(name)
-        root_text = [(chunk.root.dep_, chunk.root.text) for chunk in doc.noun_chunks]
-        root = [t for d, t in root_text if d=='ROOT'][0]
-        root_words = [t[1] for d, t in root_text]
+        root_text = [(token.dep_, token.head.text) for token in doc.token]
+        root = [t for d, t in root_text if d == 'ROOT'][0]
+        root_words = set([t[1] for d, t in root_text])
         return root, root_words
 
     def _get_features(self, s_ent, t_ent):
@@ -199,8 +199,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         max_alias_token_jaccard = 0.0
         min_alias_edit_distance = 1.0
-        best_s_alias = None
-        best_t_alias = None
+        best_s_alias = s_ent['aliases'][0]
+        best_t_alias = t_ent['aliases'][0]
 
         if not has_alias_in_common:
             for s_ind, s_a_tokens in enumerate(s_alias_tokens):
@@ -243,22 +243,22 @@ class OntologyMatchingDatasetReader(DatasetReader):
         t_acronyms = [(i[0] for i in a) for a in t_alias_tokens]
         has_same_acronym = (len(set(s_acronyms).intersection(set(t_acronyms))) > 0)
 
-        s_name_root, s_name_chunk_heads = self._dependency_parse(s_ent['canonical_name'])
-        t_name_root, t_name_chunk_heads = self._dependency_parse(t_ent['canonical_name'])
+        s_name_root, s_name_heads = self._dependency_parse(s_ent['canonical_name'])
+        t_name_root, t_name_heads = self._dependency_parse(t_ent['canonical_name'])
 
         has_same_name_root_word = (s_name_root == t_name_root)
-        has_same_name_chunk_heads = (set(s_name_chunk_heads) == set(t_name_chunk_heads))
+        has_same_name_chunk_heads = (s_name_heads == t_name_heads)
         name_chunk_heads_jaccard_similarity = string_utils.get_jaccard_similarity(
-            set(s_name_chunk_heads), set(t_name_chunk_heads)
+            s_name_heads, t_name_heads
         )
 
-        s_alias_root, s_alias_chunk_heads = self._dependency_parse(best_s_alias)
-        t_alias_root, t_alias_chunk_heads = self._dependency_parse(best_t_alias)
+        s_alias_root, s_alias_heads = self._dependency_parse(best_s_alias)
+        t_alias_root, t_alias_heads = self._dependency_parse(best_t_alias)
 
         has_same_alias_root_word = (s_alias_root == t_alias_root)
-        has_same_alias_chunk_heads = (set(s_alias_chunk_heads) == set(t_alias_chunk_heads))
+        has_same_alias_chunk_heads = (s_alias_heads == t_alias_heads)
         alias_chunk_heads_jaccard_similarity = string_utils.get_jaccard_similarity(
-            set(s_alias_chunk_heads), set(t_alias_chunk_heads)
+            s_alias_heads, t_alias_heads
         )
 
         def_jaccard_similarity = string_utils.get_jaccard_similarity(
