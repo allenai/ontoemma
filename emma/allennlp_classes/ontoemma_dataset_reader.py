@@ -54,9 +54,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
         Note that the `output` tags will always correspond to single token IDs based on how they
         are pre-tokenised in the data file.
     """
-    def __init__(self,
-                 tokenizer: Tokenizer = None) -> None:
-        self._tokenizer = tokenizer or WordTokenizer()
+    def __init__(self) -> None:
         self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
         self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
@@ -316,8 +314,5 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
     @classmethod
     def from_params(cls, params: Params) -> 'OntologyMatchingDatasetReader':
-        tokenizer = Tokenizer.from_params(params.pop('tokenizer', {}))
-        name_token_indexers = TokenIndexer.dict_from_params(params.pop('name_token_indexers', {}))
         params.assert_empty(cls.__name__)
-        return OntologyMatchingDatasetReader(tokenizer=tokenizer,
-                                             name_token_indexers=name_token_indexers)
+        return OntologyMatchingDatasetReader()
