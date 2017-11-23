@@ -33,7 +33,7 @@ class OntoEmmaNN(Model):
 
     @overrides
     def forward(self,  # type: ignore
-                lr_features: Dict[str, torch.LongTensor],
+                features: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -42,7 +42,7 @@ class OntoEmmaNN(Model):
         a decision layer.
         """
         # concatenate outputs
-        aggregate_input = lr_features.squeeze(2).float()
+        aggregate_input = features.squeeze(2).float()
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
