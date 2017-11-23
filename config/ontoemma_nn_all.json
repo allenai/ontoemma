@@ -1,58 +1,13 @@
 {
   "dataset_reader": {
-    "type": "ontology_matcher",
-    "name_token_indexers": {
-      "tokens": {
-        "type": "single_id",
-        "lowercase_tokens": true
-      },
-      "token_characters": {
-        "type": "characters"
-      }
-    }
+    "type": "ontology_matcher"
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.mini.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
   "model": {
     "type": "ontoemmaNN",
-    "name_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-                    "embedding_dim": 100,
-                    "trainable": false
-            },
-            "token_characters": {
-                    "type": "character_encoding",
-                    "embedding": {
-                      "embedding_dim": 50
-                    },
-                    "encoder": {
-                      "type": "cnn",
-                      "embedding_dim": 50,
-                      "num_filters": 50,
-                      "ngram_filter_sizes": [4, 5]
-                    },
-                    "dropout": 0.2
-            }
-    },
-    "name_rnn_encoder": {
-      "type": "rnn",
-      "input_size": 200,
-      "hidden_size": 50,
-      "num_layers": 2,
-      "dropout": 0.2,
-      "bidirectional": true
-    },
-    "siamese_feedforward": {
-      "input_dim": 200,
-      "num_layers": 2,
-      "hidden_dims": 100,
-      "activations": "relu",
-      "dropout": 0.2
-    },
     "decision_feedforward": {
-      "input_dim": 218,
+      "input_dim": 25,
       "num_layers": 3,
       "hidden_dims": [200, 200, 1],
       "activations": ["relu", "relu", "linear"],
@@ -73,6 +28,6 @@
     "num_epochs": 50,
     "patience": 10,
     "validation_metric": "+f1_score",
-    "cuda_device": 7
+    "cuda_device": -1
   }
 }
