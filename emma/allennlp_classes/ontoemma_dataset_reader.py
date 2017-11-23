@@ -342,8 +342,8 @@ class OntologyMatchingDatasetReader(DatasetReader):
         fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
         fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
 
-        s_aliases = sample_n((s_ent['aliases'], 16, 128))
-        t_aliases = sample_n((t_ent['aliases'], 16, 128))
+        s_aliases = sample_n(s_ent['aliases'], 16, 128)
+        t_aliases = sample_n(t_ent['aliases'], 16, 128)
 
         # add entity alias fields
         fields['s_ent_aliases'] = ListField(
