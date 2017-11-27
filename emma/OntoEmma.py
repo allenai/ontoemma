@@ -209,8 +209,8 @@ class OntoEmma:
             sys.stdout.write("Training {} model...\n".format(constants.IMPLEMENTED_MODEL_TYPES[model_type]))
 
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
             with open(config_file) as json_data:
                 configuration = json.load(json_data)
@@ -321,8 +321,8 @@ class OntoEmma:
 
         if model_type == "nn":
             # import allennlp ontoemma classes (to register -- necessary, do not remove)
-            from emma.allennlp_classes.ontoemma_dataset_reader_nocontext import OntologyMatchingDatasetReader
-            from emma.allennlp_classes.ontoemma_model_nocontext import OntoEmmaNN
+            from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
+            from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
 
             # Load from archive
             archive = load_archive(model_path, cuda_device)
