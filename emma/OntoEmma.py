@@ -12,7 +12,6 @@ from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
-from nltk.tokenize import word_tokenize
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
@@ -634,6 +633,8 @@ class OntoEmma:
                             (json_data['target_ent']['research_entity_id'],
                              output['score'][0])
                         )
+
+        alignment = []
 
         for s_ent_id, matches in temp_alignments.items():
             if len(matches) > 0:
