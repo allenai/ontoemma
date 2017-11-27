@@ -8,6 +8,7 @@ import itertools
 import requests
 import jsonlines
 import numpy as np
+from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
@@ -534,56 +535,39 @@ class OntoEmma:
         # computing entity representations
         sys.stdout.write("Computing entity representations...\n")
         rep_dict = dict()
-        batch_json_data = []
-        entity_tqdm = tqdm.tqdm(itertools.chain(source_kb.entities, target_kb.entities),
-                                desc="KB entities",
-                                total=len(source_kb.entities)+len(target_kb.entities))
-
-        if cuda_device >= 0:
-            # predict in batches
-            for ent in entity_tqdm:
-                batch_json_data.append(_form_json_entity(ent))
-                if len(batch_json_data) == batch_size:
-                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
-                    for model_input, output in zip(batch_json_data, results):
-                        rep_dict[model_input['research_entity_id']] = output['ent_rep']
-                    batch_json_data = []
-            if batch_json_data:
-                results = predictor.predict_batch_json(batch_json_data, cuda_device)
-                for model_input, output in zip(batch_json_data, results):
-                    rep_dict[model_input['research_entity_id']] = output['ent_rep']
-        else:
-            # predict individually
-            for ent in entity_tqdm:
-                output = predictor.predict_json(_form_json_entity(ent))
-                rep_dict[ent.research_entity_id] = output['ent_rep']
 
         sys.stdout.write("Making predictions...\n")
         alignment = []
         s_ent_tqdm = tqdm.tqdm(source_kb.entities,
                                total=len(source_kb.entities))
+
+        temp_alignments = defaultdict(list)
+
         for s_ent in s_ent_tqdm:
-            s_ent_id = s_ent.research_entity_id
             for t_ent_id in candidate_selector.select_candidates(
-                    s_ent_id
+                    s_ent.research_entity_id
             )[:constants.KEEP_TOP_K_CANDIDATES]:
                 t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                json_data = {
+                    'source_ent': _form_json_entity(s_ent),
+                    'target_ent': _form_json_entity(t_ent),
+                    'label': 0
+                }
+                batch_json_data.append(json_data)
 
-                # generate regions around s_ent and t_ent not included s_ent and t_ent
-                s_region = self._get_region_around_ent(s_ent, source_kb)
-                t_region = self._get_region_around_ent(t_ent, target_kb)
+                if len(batch_json_data) == batch_size:
+                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
+                    for model_input, output in zip(batch_json_data, results):
+                        if output['predicted_label'] == [1.0]:
+                            temp_alignments[model_input['source_ent']['research_entity_id']].append(
+                                (model_input['target_ent']['research_entity_id'], output['score'])
+                            )
+                    batch_json_data = []
 
-                # sum regional contributions to similarity
-                global_sum = 0.0
-
-                for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
-                    global_sum += self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id]) \
-                                  * self._get_rep_similarity(rep_dict[s_neighbor_id], rep_dict[t_neighbor_id])
-                global_similarity = global_sum / (len(s_region) + len(t_region))
-
-                # TODO: replace with a LR/SVM model which takes global_similarity as an input feature
-                if global_similarity >= 0.4:
-                    alignment.append((s_ent_id, t_ent_id, global_similarity))
+        for s_ent_id, matches in temp_alignments.values():
+            if matches:
+                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                alignment.append(m_sort[0])
 
         return alignment
 
