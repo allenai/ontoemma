@@ -7,7 +7,8 @@ IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
                            "lr": "Logistic Regression"}
 
 # Score threshold for positive alignment
-SCORE_THRESHOLD = 0.50
+LR_SCORE_THRESHOLD = 0.50
+NN_SCORE_THRESHOLD = 0.95
 
 # Minimum size for training data
 MIN_TRAINING_SET_SIZE = 10
@@ -41,3 +42,6 @@ UMLS_SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
 UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 'part_of']
 UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
 UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
+
+# number of steps for generating regional graph
+NUM_STEPS_FOR_KB_REGION = 5
