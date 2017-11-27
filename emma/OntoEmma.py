@@ -32,8 +32,8 @@ from allennlp.commands.evaluate import evaluate as evaluate_allennlp
 from allennlp.models.archival import load_archive
 from allennlp.service.predictors import Predictor
 
+
 # class for training an ontology matcher and aligning input ontologies
-# TODO: Refactor to move all LR model specific code into OntoEmmaLRModel for better encapsulation
 class OntoEmma:
     def __init__(self):
         paths = StandardFilePath()
@@ -176,6 +176,13 @@ class OntoEmma:
 
     @staticmethod
     def _alignments_to_pairs_and_labels(file_path):
+        """
+        Convert jsonlines alignments to pairs and labels
+        File format of input file specified by
+        https://docs.google.com/a/allenai.org/document/d/1t8cwpTRqcscFEZOQJrtTMAhjAYzlA_demc9GCY0xYaU
+        :param file_path:
+        :return:
+        """
         pairs = []
         labels = []
         with jsonlines.open(file_path) as reader:
