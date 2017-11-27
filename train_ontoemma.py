@@ -48,7 +48,7 @@ def main(argv):
             sys.stdout.write('-g <cuda_device>\n\n')
             sys.stdout.write('Example usages: \n')
             sys.stdout.write(
-                '  ./train_ontoemma.py -c configuration_file.json -m model_file_path -p nn -g 5\n'
+                '  ./train_ontoemma.py -c configuration_file.json -m model_file_path -p nn\n'
             )
             sys.stdout.write(
                 '  ./train_ontoemma.py -e -m model_file_path -d evaluation_data_path -g 5\n'
@@ -92,7 +92,7 @@ def main(argv):
         )
     else:
         matcher.train(
-            model_type, model_path, config_file, cuda_device
+            model_type, model_path, config_file
         )
 
 

@@ -112,11 +112,11 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         # add entity alias fields
         fields['s_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
              for a in s_aliases]
         )
         fields['t_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize(a), self._name_token_indexers)
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
              for a in t_aliases]
         )
 

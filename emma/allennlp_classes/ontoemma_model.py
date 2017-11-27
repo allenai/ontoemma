@@ -154,6 +154,7 @@ class OntoEmmaNN(Model):
 
         # build output dictionary
         output_dict = {"predicted_label": predicted_label}
+        output_dict["score"] = sigmoid_output
 
         if label is not None:
             # compute loss and accuracy
