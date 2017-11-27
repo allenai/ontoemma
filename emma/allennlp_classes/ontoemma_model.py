@@ -103,7 +103,7 @@ class OntoEmmaNN(Model):
 
     @overrides
     def forward(self,  # type: ignore
-                lr_features: Dict[str, torch.LongTensor],
+                sparse_features: Dict[str, torch.LongTensor],
                 s_ent_name: Dict[str, torch.LongTensor],
                 t_ent_name: Dict[str, torch.LongTensor],
                 s_ent_aliases: Dict[str, torch.LongTensor],
@@ -203,7 +203,7 @@ class OntoEmmaNN(Model):
 
         # concatenate outputs
         aggregate_input = torch.cat([
-            lr_features.squeeze(2).float(),
+            sparse_features.squeeze(2).float(),
             aggregate_embedding_similarity,
             s_ent_output,
             t_ent_output

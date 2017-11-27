@@ -332,7 +332,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         fields: Dict[str, Field] = {}
 
-        fields['lr_features'] = ListField(self._get_features(self._normalize_ent(s_ent), self._normalize_ent(t_ent)))
+        fields['sparse_features'] = ListField(self._get_features(self._normalize_ent(s_ent), self._normalize_ent(t_ent)))
 
         # tokenize names
         s_name_tokens = self._tokenizer.tokenize('00000 ' + s_ent['canonical_name'])
