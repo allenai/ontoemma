@@ -14,8 +14,6 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 from nltk.tokenize import word_tokenize
 
-from torch.cuda import device
-
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
@@ -31,6 +29,8 @@ from allennlp.data.iterators import DataIterator
 from allennlp.commands.evaluate import evaluate as evaluate_allennlp
 from allennlp.models.archival import load_archive
 from allennlp.service.predictors import Predictor
+
+from torch.cuda import device
 
 
 # class for training an ontology matcher and aligning input ontologies
