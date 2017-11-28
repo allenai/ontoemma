@@ -15,7 +15,7 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
-from emma.kb.kb_utils_refactor import KnowledgeBase
+from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.FeatureGeneratorLR import FeatureGeneratorLR
@@ -214,6 +214,33 @@ class OntoEmma:
                 labels.append(obj['label'])
         return pairs, labels
 
+    @staticmethod
+    def _form_json_entity(ent_to_json: KBEntity, kb: KnowledgeBase):
+        """
+        Forms json representation of entity from kb
+        :param ent_to_json:
+        :param kb:
+        :return:
+        """
+        all_rels = [kb.relations[r_id] for r_id in ent_to_json.relation_ids]
+        par_ents = [
+            kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
+            if r.relation_type in constants.UMLS_PARENT_REL_LABELS
+        ]
+        chd_ents = [
+            kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
+            if r.relation_type in constants.UMLS_CHILD_REL_LABELS
+        ]
+        return {
+            'research_entity_id': ent_to_json.research_entity_id,
+            'canonical_name': ent_to_json.canonical_name,
+            'aliases': ent_to_json.aliases,
+            'definition': ent_to_json.definition,
+            'other_contexts': ent_to_json.other_contexts,
+            'par_relations': [e.canonical_name for e in par_ents],
+            'chd_relations': [e.canonical_name for e in chd_ents]
+        }
+
     def _train_lr(self, model_path: str, config_file: str):
         """
         Train a logistic regression model
@@ -239,16 +266,16 @@ class OntoEmma:
         sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
-        feat_gen_train = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
+        feat_gen_train = FeatureGeneratorLR()
         training_features = [
-            feat_gen_train.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            feat_gen_train.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in training_pairs
         ]
 
         # generate features for development pairs
-        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
+        feat_gen_dev = FeatureGeneratorLR()
         dev_features = [
-            feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            feat_gen_dev.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in dev_pairs
         ]
 
@@ -328,9 +355,9 @@ class OntoEmma:
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
-        feat_gen = FeatureGeneratorLR([item for sublist in eval_pairs for item in sublist])
+        feat_gen = FeatureGeneratorLR()
         eval_features = [
-            feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            feat_gen.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in eval_pairs
         ]
 
@@ -421,66 +448,6 @@ class OntoEmma:
             sys.stdout.write("\t%s: %s\n" % (key, metric))
         return
 
-    def _align_lr(self, model_path, source_kb, target_kb, candidate_selector):
-        """
-        Align using logistic regression model
-        :param source_kb:
-        :param target_kb:
-        :param candidate_selector:
-        :return:
-        """
-
-        # returns json representation of entity that matches what feature generator expects
-        def _form_json_entity(ent, kb):
-            parent_ids = [kb.relations[rel_id].entity_ids[1]
-                          for rel_id in ent.relation_ids
-                          if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
-
-            child_ids = [kb.relations[rel_id].entity_ids[1]
-                         for rel_id in ent.relation_ids
-                         if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
-
-            parents = [kb.get_entity_by_research_entity_id(i).canonical_name
-                       for i in parent_ids if i in kb.research_entity_id_to_entity_index]
-
-            children = [kb.get_entity_by_research_entity_id(i).canonical_name
-                        for i in child_ids if i in kb.research_entity_id_to_entity_index]
-
-            return {
-                'research_entity_id': ent.research_entity_id,
-                'canonical_name': ent.canonical_name,
-                'aliases': ent.aliases,
-                'definition': ent.definition,
-                'par_relations': parents,
-                'chd_relations': children
-            }
-
-        alignment = []
-
-        feature_generator = FeatureGeneratorLR(
-            [_form_json_entity(ent, source_kb) for ent in source_kb.entities] +
-            [_form_json_entity(ent, target_kb) for ent in target_kb.entities]
-        )
-
-        sys.stdout.write("Loading model...\n")
-        model = OntoEmmaLRModel()
-        model.load(model_path)
-
-        sys.stdout.write("Making predictions...\n")
-        s_ent_tqdm = tqdm.tqdm(source_kb.entities,
-                               total=len(source_kb.entities))
-        for s_ent in s_ent_tqdm:
-            s_ent_id = s_ent.research_entity_id
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
-                score = model.predict_entity_pair(features)
-                if score[0][1] >= constants.LR_SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, t_ent_id, score[0][1]))
-
-        return alignment
-
     @staticmethod
     def _get_region_around_ent(start_ent, kb):
         """
@@ -517,7 +484,7 @@ class OntoEmma:
         :param path2:
         :return:
         """
-        return math.exp(-(len(path1) + len(path2))/2)
+        return math.exp(-(len(path1) + len(path2)) / 2)
 
     @staticmethod
     def _get_rep_similarity(rep1, rep2):
@@ -568,6 +535,87 @@ class OntoEmma:
 
         return alignment, s_remaining, t_remaining
 
+    def _compute_global_similarities(self, local_scores, s_kb, t_kb):
+        """
+        Compute global similarities based on scores in local_scores
+        :param local_scores:
+        :param s_kb:
+        :param t_kb:
+        :return:
+        """
+        # compute temporary alignments
+        temp_alignments = defaultdict(list)
+
+        for (s_ent_id, t_ent_id), score in local_scores.items():
+            s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
+            t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+
+            # generate regions around s_ent and t_ent not included s_ent and t_ent
+            s_region = self._get_region_around_ent(s_ent, s_kb)
+            t_region = self._get_region_around_ent(t_ent, t_kb)
+
+            # sum regional contributions to similarity
+            global_sum = 0.0
+            distance_weights = 0.0
+            for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
+                    if (s_neighbor_id, t_neighbor_id) in local_scores:
+                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
+                        distance_weights += d_weight
+                        global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
+            global_score = global_sum / distance_weights
+            temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
+
+        global_matches = []
+
+        for s_ent_id, matches in temp_alignments.items():
+            if len(matches) > 0:
+                m_sort = sorted(matches, key=lambda p: p[2], reverse=True)
+                if m_sort[0][2] >= constants.NN_SCORE_THRESHOLD:
+                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][2]))
+
+        sys.stdout.write('Global matches: %i\n' % len(global_matches))
+        return global_matches
+
+    def _align_lr(self, model_path, source_kb, target_kb, candidate_selector):
+        """
+        Align using logistic regression model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :return:
+        """
+        feature_generator = FeatureGeneratorLR(candidate_selector.s_token_to_idf,
+                                               candidate_selector.t_token_to_idf)
+
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
+
+        sys.stdout.write("Loading model...\n")
+        model = OntoEmmaLRModel()
+        model.load(model_path)
+
+        sys.stdout.write("Making predictions...\n")
+        local_scores = dict()
+        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
+                               total=len(s_ent_ids))
+        for s_ent_id in s_ent_tqdm:
+            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                if t_ent_id in t_ent_ids:
+                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                    features = [feature_generator.calculate_features(self._form_json_entity(s_ent, source_kb),
+                                                                     self._form_json_entity(t_ent, target_kb))]
+                    score = model.predict_entity_pair(features)
+                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
+                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
+
+        global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
+
+        return alignment + global_matches
+
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
         Align using neural network model
@@ -577,26 +625,6 @@ class OntoEmma:
         :param cuda_device: GPU device number
         :return:
         """
-        # returns json representation of entity
-        def _form_json_entity(ent_to_json, kb):
-            all_rels = [kb.relations[r_id] for r_id in ent_to_json.relation_ids]
-            par_ents = [
-                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
-            ]
-            chd_ents = [
-                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
-            ]
-            return {
-                'research_entity_id': ent_to_json.research_entity_id,
-                'canonical_name': ent_to_json.canonical_name,
-                'aliases': ent_to_json.aliases,
-                'definition': ent_to_json.definition,
-                'other_contexts': ent_to_json.other_contexts,
-                'par_relations': [e.canonical_name for e in par_ents],
-                'chd_relations': [e.canonical_name for e in chd_ents]
-            }
 
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
@@ -634,8 +662,8 @@ class OntoEmma:
                 t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
 
                 json_data = {
-                    'source_ent': _form_json_entity(s_ent, source_kb),
-                    'target_ent': _form_json_entity(t_ent, target_kb),
+                    'source_ent': self._form_json_entity(s_ent, source_kb),
+                    'target_ent': self._form_json_entity(t_ent, target_kb),
                     'label': 0
                 }
                 batch_json_data.append(json_data)
@@ -644,7 +672,7 @@ class OntoEmma:
                     results = predictor.predict_batch_json(batch_json_data, cuda_device)
 
                     for ent_data, output in zip(batch_json_data, results):
-                        if output['score'][0] >= 0.2:
+                        if output['score'][0] >= constants.MIN_SCORE_THRESHOLD:
                             local_scores[
                                 (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
                             ] = output['score'][0]
@@ -654,44 +682,13 @@ class OntoEmma:
         if batch_json_data:
             results = predictor.predict_batch_json(batch_json_data, cuda_device)
             for ent_data, output in zip(batch_json_data, results):
-                if output['score'][0] >= 0.2:
+                if output['score'][0] >= constants.MIN_SCORE_THRESHOLD:
                     local_scores[
                         (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
                     ] = output['score'][0]
 
         sys.stdout.write("Computing global similarities...\n")
-        # compute global similarity scores
-        temp_alignments = defaultdict(list)
-
-        for (s_ent_id, t_ent_id), score in local_scores.items():
-            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-            t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-
-            # generate regions around s_ent and t_ent not included s_ent and t_ent
-            s_region = self._get_region_around_ent(s_ent, source_kb)
-            t_region = self._get_region_around_ent(t_ent, target_kb)
-
-            # sum regional contributions to similarity
-            global_sum = 0.0
-            distance_weights = 0.0
-            for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
-                if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
-                    if (s_neighbor_id, t_neighbor_id) in local_scores:
-                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
-                        distance_weights += d_weight
-                        global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
-            global_score = global_sum / distance_weights
-            temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
-
-        global_matches = []
-
-        for s_ent_id, matches in temp_alignments.items():
-            if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[2], reverse=True)
-                if m_sort[0][2] >= constants.NN_SCORE_THRESHOLD:
-                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][2]))
-
-        sys.stdout.write('Global matches: %i\n' % len(global_matches))
+        global_matches = self._compute_global_similarities(local_scores)
 
         return alignment + global_matches
 
