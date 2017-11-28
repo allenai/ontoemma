@@ -137,14 +137,14 @@ class OntoEmmaNN(Model):
         encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
         s_ent_aliases_mask = torch.sum(encoded_s_ent_aliases, 2) != 0.0
-        averaged_s_ent_aliases = self._model.name_boe_encoder(encoded_s_ent_aliases, s_ent_aliases_mask)
+        averaged_s_ent_aliases = self.name_boe_encoder(encoded_s_ent_aliases, s_ent_aliases_mask)
 
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         t_ent_aliases_mask = torch.sum(encoded_t_ent_aliases, 2) != 0.0
-        averaged_t_ent_aliases = self._model.name_boe_encoder(encoded_t_ent_aliases, t_ent_aliases_mask)
+        averaged_t_ent_aliases = self.name_boe_encoder(encoded_t_ent_aliases, t_ent_aliases_mask)
 
         alias_similarity = torch.diag(averaged_s_ent_aliases.mm(averaged_t_ent_aliases.t()), 0)
 
@@ -221,6 +221,8 @@ class OntoEmmaNN(Model):
         output_dict = dict()
         output_dict["score"] = sigmoid_output
         output_dict["predicted_label"] = predicted_label
+        output_dict["sparse_features"] = sparse_features.squeeze(2).float()
+        output_dict["aggregate_similarities"] = aggregate_embedding_similarity
 
         if label is not None:
             # compute loss and accuracy
