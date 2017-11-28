@@ -75,33 +75,33 @@ class UMLSExtractor(App):
 
         self.done_file = os.path.join(self.OUTPUT_DIR, "processed.txt")
 
-        sys.stdout.write("Extracting concepts...\n")
-        concepts = self.extract_concepts()
-        sys.stdout.write("Number of concepts: %i\n" % len(concepts))
+        # sys.stdout.write("Extracting concepts...\n")
+        # concepts = self.extract_concepts()
+        # sys.stdout.write("Number of concepts: %i\n" % len(concepts))
+        #
+        # sys.stdout.write("Extracting concept mappings...\n")
+        # self.extract_mappings(concepts)
+        #
+        # sys.stdout.write("Write mappings to file...\n")
+        # self.write_mappings_to_file()
+        #
+        # sys.stdout.write("Collapsing concepts to KB entities...\n")
+        # kb_entities, aui_to_research_entity_id_dict = self.collapse_concepts(concepts)
+        #
+        # sys.stdout.write("Extracting definitions...\n")
+        # kb_entities = self.extract_definitions(kb_entities, aui_to_research_entity_id_dict)
+        #
+        # sys.stdout.write("Extracting relations...\n")
+        # relations = self.extract_relationships(aui_to_research_entity_id_dict)
+        # sys.stdout.write("Number of relations: %i\n" % len(relations))
+        #
+        # sys.stdout.write("Adding relations to entities...\n")
+        # kb_entities = self.append_relations_to_entities(kb_entities, relations)
+        #
+        # sys.stdout.write("Creating knowledgebases...\n")
+        # self.create_umls_kbs(kb_entities)
 
-        sys.stdout.write("Extracting concept mappings...\n")
-        self.extract_mappings(concepts)
-
-        sys.stdout.write("Write mappings to file...\n")
-        self.write_mappings_to_file()
-
-        sys.stdout.write("Collapsing concepts to KB entities...\n")
-        kb_entities, aui_to_research_entity_id_dict = self.collapse_concepts(concepts)
-
-        sys.stdout.write("Extracting definitions...\n")
-        kb_entities = self.extract_definitions(kb_entities, aui_to_research_entity_id_dict)
-
-        sys.stdout.write("Extracting relations...\n")
-        relations = self.extract_relationships(aui_to_research_entity_id_dict)
-        sys.stdout.write("Number of relations: %i\n" % len(relations))
-
-        sys.stdout.write("Adding relations to entities...\n")
-        kb_entities = self.append_relations_to_entities(kb_entities, relations)
-
-        sys.stdout.write("Creating knowledgebases...\n")
-        self.create_umls_kbs(kb_entities)
-
-        # self.load_mappings_from_file()
+        self.load_mappings_from_file()
 
         sys.stdout.write("Sampling negative mappings...\n")
         self.extract_negative_mappings()
@@ -302,6 +302,25 @@ class UMLSExtractor(App):
             self.add_context_to_kb(kb)
         return
 
+    @staticmethod
+    def string_equiv(ent1, ent2):
+        """
+        Returns string equivalence between two entities' aliases
+        :param ent1:
+        :param ent2:
+        :return:
+        """
+        e1_aliases = set(
+            [a.lower().replace('_', ' ').replace('-', '') for a in ent1.aliases]
+        )
+        e2_aliases = set(
+            [a.lower().replace('_', ' ').replace('-', '') for a in ent2.aliases]
+        )
+        if len(e1_aliases.intersection(e2_aliases)) > 0:
+            return True
+
+        return False
+
     def sample_negative_mappings(self, kb1, kb2, tp_mappings):
         """
         Given two KBs and true positive mapping, sample easy and hard negatives
@@ -324,8 +343,10 @@ class UMLSExtractor(App):
         for tp in tps:
             # get candidates for source entity
             cands = cand_sel.select_candidates(tp[0])[:constants.KEEP_TOP_K_CANDIDATES]
+            if tp[1] in cands:
+                cands.remove(tp[1])
             # sample hard negatives
-            cand = random.sample(cands, min(constants.NUM_HARD_NEGATIVE_PER_POSITIVE, len(cands)))
+            cand = cands[:min(constants.NUM_HARD_NEGATIVE_PER_POSITIVE, len(cands))]
             cand_negs += [tuple([tp[0], c]) for c in cand]
             # sample easy negatives
             rand = random.sample(kb2_ent_ids, constants.NUM_EASY_NEGATIVE_PER_POSITIVE)
@@ -362,7 +383,7 @@ class UMLSExtractor(App):
             kb1_path = os.path.join(self.OUTPUT_KB_DIR, kb1_fname)
             kb2_path = os.path.join(self.OUTPUT_KB_DIR, kb2_fname)
             training_path = os.path.join(
-                self.OUTPUT_DIR, 'training', training_fname
+                self.OUTPUT_DIR, 'training', 'nonequiv', training_fname
             )
 
             # initialize KBs
@@ -374,12 +395,23 @@ class UMLSExtractor(App):
             s_kb = s_kb.load(kb1_path)
             t_kb = t_kb.load(kb2_path)
 
+            kb_training_keep = []
+            # keep only non-equiv mappings
+            for s_id, t_id, score, _ in kb_training_data:
+                if not self.string_equiv(s_kb.get_entity_by_research_entity_id(s_id),
+                                         t_kb.get_entity_by_research_entity_id(t_id)):
+                    kb_training_keep.append((s_id, t_id, score, _))
+
+            sys.stdout.write("\t\tKeeping %i out of %i positive mappings.\n" % (
+                len(kb_training_keep), len(kb_training_data))
+            )
+
             # sample negatives using candidate selection module
             sys.stdout.write(
                 "\t\tSampling negatives between %s and %s\n" % kb_names
             )
             neg_mappings = self.sample_negative_mappings(
-                s_kb, t_kb, kb_training_data
+                s_kb, t_kb, kb_training_keep
             )
 
             # write negative mappings to training data file
@@ -449,11 +481,11 @@ class UMLSExtractor(App):
         :return:
         """
         all_kb_names = constants.TRAINING_KBS + constants.DEVELOPMENT_KBS
-        training_file_dir = os.path.join(self.OUTPUT_DIR, 'training')
+        training_file_dir = os.path.join(self.OUTPUT_DIR, 'training', 'nonequiv')
 
-        output_training_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.train')
-        output_development_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.dev')
-        output_test_data = os.path.join(self.TRAINING_DIR, 'ontoemma.context.test')
+        output_training_data = os.path.join(self.TRAINING_DIR, 'nonequiv', 'ontoemma.context.train')
+        output_development_data = os.path.join(self.TRAINING_DIR, 'nonequiv', 'ontoemma.context.dev')
+        output_test_data = os.path.join(self.TRAINING_DIR, 'nonequiv', 'ontoemma.context.test')
 
         context_files = glob.glob(os.path.join(self.OUTPUT_KB_DIR, '*context.json'))
         context_kbs = [os.path.basename(f).split('-')[1] for f in context_files]

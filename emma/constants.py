@@ -7,6 +7,7 @@ IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
                            "lr": "Logistic Regression"}
 
 # Score threshold for positive alignment
+MIN_SCORE_THRESHOLD = 0.20
 LR_SCORE_THRESHOLD = 0.50
 NN_SCORE_THRESHOLD = 0.95
 
@@ -23,7 +24,7 @@ NGRAM_SIZE = 5
 IDF_LIMIT = np.log(20)
 
 # Negative samples per positive
-NUM_HARD_NEGATIVE_PER_POSITIVE = 1
+NUM_HARD_NEGATIVE_PER_POSITIVE = 2
 NUM_EASY_NEGATIVE_PER_POSITIVE = 1
 
 # training KB names
