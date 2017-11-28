@@ -47,3 +47,6 @@ UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
 
 # number of steps for generating regional graph
 NUM_STEPS_FOR_KB_REGION = 5
+
+# global similarity iterations
+GLOBAL_SIMILARITY_ITERATIONS = 5

@@ -567,31 +567,39 @@ class OntoEmma:
         :param t_kb:
         :return:
         """
-        # compute temporary alignments
         temp_alignments = defaultdict(list)
 
-        for (s_ent_id, t_ent_id), score in local_scores.items():
-            s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
-            t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+        # iteratively calculate global similarity scores
+        for i in range(0, constants.GLOBAL_SIMILARITY_ITERATIONS):
+            # compute temporary alignments
+            temp_alignments = defaultdict(list)
+            global_scores = dict()
+            for (s_ent_id, t_ent_id), score in local_scores.items():
+                s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
+                t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
 
-            # generate regions around s_ent and t_ent not included s_ent and t_ent
-            s_region = self._get_region_around_ent(s_ent, s_kb)
-            t_region = self._get_region_around_ent(t_ent, t_kb)
+                # generate regions around s_ent and t_ent not included s_ent and t_ent
+                s_region = self._get_region_around_ent(s_ent, s_kb)
+                t_region = self._get_region_around_ent(t_ent, t_kb)
 
-            # sum regional contributions to similarity
-            global_sum = 0.0
-            distance_weights = 0.0
-            for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
-                if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
-                    if (s_neighbor_id, t_neighbor_id) in local_scores:
-                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
-                        distance_weights += d_weight
-                        global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
-            global_score = global_sum / distance_weights
-            temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
+                # sum regional contributions to similarity
+                global_sum = 0.0
+                distance_weights = 0.0
+                for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                    if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
+                        if (s_neighbor_id, t_neighbor_id) in local_scores:
+                            d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
+                            distance_weights += d_weight
+                            global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
+                global_score = global_sum / distance_weights
+                global_scores[(s_ent_id, t_ent_id)] = global_score
+                temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
 
+            # set local scores to newly computed global scores
+            local_scores = global_scores
+
+        # compute matches based on global scores
         global_matches = []
-
         for s_ent_id, matches in temp_alignments.items():
             if len(matches) > 0:
                 m_sort = sorted(matches, key=lambda p: p[2], reverse=True)
@@ -609,15 +617,14 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
-                                                   candidate_selector.t_token_to_idf)
-
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaLRModel()
         model.load(model_path)
+        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
+                                                   candidate_selector.t_token_to_idf)
 
         sys.stdout.write("Making predictions...\n")
         local_scores = dict()
