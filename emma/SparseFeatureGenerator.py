@@ -9,8 +9,8 @@ import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 
-# class for generating features for LR model between entities of two KBs
-class FeatureGeneratorLR:
+# class for generating sparse features between entities of two KBs
+class SparseFeatureGenerator:
     def __init__(self, s_token_to_idf: dict = None, t_token_to_idf: dict = None):
         """
         Initializae feature generator; token to idf dicts are taken from the candidate selector

@@ -4,7 +4,8 @@ import numpy as np
 
 # Accepted model types
 IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
-                           "lr": "Logistic Regression"}
+                           "lr": "Logistic Regression",
+                           "rf": "Random Forest"}
 
 # Score threshold for positive alignment
 MIN_SCORE_THRESHOLD = 0.20

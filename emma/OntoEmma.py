@@ -15,10 +15,11 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
+from emma.OntoEmmaRFModel import OntoEmmaRFModel
 from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
-from emma.FeatureGeneratorLR import FeatureGeneratorLR
+from emma.SparseFeatureGenerator import SparseFeatureGenerator
 from emma.paths import StandardFilePath
 import emma.constants as constants
 
@@ -241,15 +242,14 @@ class OntoEmma:
             'chd_relations': [e.canonical_name for e in chd_ents]
         }
 
-    def _train_lr(self, model_path: str, config_file: str):
+    def _apply_model(self, model, model_path, config_file):
         """
-        Train a logistic regression model
+        Apply loaded model to config_file data and save
+        :param model:
         :param model_path:
         :param config_file:
         :return:
         """
-        model = OntoEmmaLRModel()
-
         # read model config
         with open(config_file, 'r') as f:
             config = json.load(f)
@@ -266,14 +266,14 @@ class OntoEmma:
         sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
-        feat_gen_train = FeatureGeneratorLR()
+        feat_gen_train = SparseFeatureGenerator()
         training_features = [
             feat_gen_train.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in training_pairs
         ]
 
         # generate features for development pairs
-        feat_gen_dev = FeatureGeneratorLR()
+        feat_gen_dev = SparseFeatureGenerator()
         dev_features = [
             feat_gen_dev.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in dev_pairs
@@ -292,6 +292,28 @@ class OntoEmma:
         )
 
         model.save(model_path)
+        return
+
+    def _train_lr(self, model_path: str, config_file: str):
+        """
+        Train a logistic regression model
+        :param model_path:
+        :param config_file:
+        :return:
+        """
+        model = OntoEmmaLRModel()
+        self._apply_model(model, model_path, config_file)
+        return
+
+    def _train_rf(self, model_path: str, config_file: str):
+        """
+        Train a random forest model
+        :param model_path:
+        :param config_file:
+        :return:
+        """
+        model = OntoEmmaRFModel()
+        self._apply_model(model, model_path, config_file)
         return
 
     def _train_nn(self, model_path: str, config_file: str):
@@ -336,6 +358,8 @@ class OntoEmma:
             self._train_nn(model_path, config_file)
         elif model_type == "lr":
             self._train_lr(model_path, config_file)
+        elif model_type == "rf":
+            self._train_rf(model_path, config_file)
 
         sys.stdout.write("done.\n")
         return
@@ -355,7 +379,7 @@ class OntoEmma:
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
-        feat_gen = FeatureGeneratorLR()
+        feat_gen = SparseFeatureGenerator()
         eval_features = [
             feat_gen.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in eval_pairs
@@ -585,14 +609,53 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        feature_generator = FeatureGeneratorLR(candidate_selector.s_token_to_idf,
-                                               candidate_selector.t_token_to_idf)
+        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
+                                                   candidate_selector.t_token_to_idf)
 
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaLRModel()
+        model.load(model_path)
+
+        sys.stdout.write("Making predictions...\n")
+        local_scores = dict()
+        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
+                               total=len(s_ent_ids))
+        for s_ent_id in s_ent_tqdm:
+            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
+            for t_ent_id in candidate_selector.select_candidates(
+                    s_ent_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                if t_ent_id in t_ent_ids:
+                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                    features = [feature_generator.calculate_features(self._form_json_entity(s_ent, source_kb),
+                                                                     self._form_json_entity(t_ent, target_kb))]
+                    score = model.predict_entity_pair(features)
+                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
+                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
+
+        global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
+
+        return alignment + global_matches
+
+    def _align_rf(self, model_path, source_kb, target_kb, candidate_selector):
+        """
+        Align using logistic regression model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :return:
+        """
+        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
+                                                   candidate_selector.t_token_to_idf)
+
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
+
+        sys.stdout.write("Loading model...\n")
+        model = OntoEmmaRFModel()
         model.load(model_path)
 
         sys.stdout.write("Making predictions...\n")
@@ -728,6 +791,8 @@ class OntoEmma:
             alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel)
         elif model_type == 'nn':
             alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
+        elif model_type == 'rf':
+            alignment = self._align_rf(model_path, s_kb, t_kb, cand_sel)
 
         if missed_path is None and output_path is not None:
             missed_path = output_path + '.ontoemma.missed'
