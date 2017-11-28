@@ -410,6 +410,7 @@ class KBLoader(object):
                     # if no name available (usually entity from external KB), replace name with id
                     if entity.canonical_name is None:
                         entity.canonical_name = entity.research_entity_id
+                        entity.aliases = [entity.canonical_name.lower()]
 
                     # get definition
                     if 'skos' in ns:

@@ -581,6 +581,7 @@ class OntoEmma:
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
+        # Load similarity predictor
         if cuda_device > 0:
             with device(cuda_device):
                 archive = load_archive(model_path, cuda_device=cuda_device)
@@ -592,57 +593,79 @@ class OntoEmma:
         sys.stdout.write("Making predictions...\n")
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
                                total=len(s_ent_ids))
+        local_scores = dict()
+
+        batch_json_data = []
+
+        for s_ent_id in s_ent_tqdm:
+            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
+            for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
+                if t_ent_id not in t_ent_ids:
+                    continue
+
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+
+                json_data = {
+                    'source_ent': _form_json_entity(s_ent, source_kb),
+                    'target_ent': _form_json_entity(t_ent, target_kb),
+                    'label': 0
+                }
+                batch_json_data.append(json_data)
+
+                if len(batch_json_data) == batch_size:
+                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
+
+                    for ent_data, output in zip(batch_json_data, results):
+                        if output['score'][0] >= 0.2:
+                            local_scores[
+                                (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
+                            ] = output['score'][0]
+
+                    batch_json_data = []
+
+        if batch_json_data:
+            results = predictor.predict_batch_json(batch_json_data, cuda_device)
+            for ent_data, output in zip(batch_json_data, results):
+                if output['score'][0] >= 0.2:
+                    local_scores[
+                        (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
+                    ] = output['score'][0]
+
+        sys.stdout.write("Computing global similarities...\n")
+        # compute global similarity scores
         temp_alignments = defaultdict(list)
 
-        if cuda_device > 0:
-            with device(cuda_device):
-                batch_json_data = []
+        for (s_ent_id, t_ent_id), score in local_scores.items():
+            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
+            t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
 
-                for s_ent_id in s_ent_tqdm:
-                    s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-                    for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
-                        t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                        json_data = {
-                            'source_ent': _form_json_entity(s_ent, source_kb),
-                            'target_ent': _form_json_entity(t_ent, target_kb),
-                            'label': 0
-                        }
-                        batch_json_data.append(json_data)
+            # generate regions around s_ent and t_ent not included s_ent and t_ent
+            s_region = self._get_region_around_ent(s_ent, source_kb)
+            t_region = self._get_region_around_ent(t_ent, target_kb)
 
-                        if len(batch_json_data) == batch_size:
-                            results = predictor.predict_batch_json(batch_json_data, cuda_device)
-                            for model_input, output in zip(batch_json_data, results):
-                                if output['predicted_label'] == [1.0]:
-                                    temp_alignments[model_input['source_ent']['research_entity_id']].append(
-                                        (model_input['target_ent']['research_entity_id'], output['score'][0])
-                                    )
-                            batch_json_data = []
-        else:
-            for s_ent_id in s_ent_tqdm:
-                s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-                for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
-                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                    json_data = {
-                        'source_ent': _form_json_entity(s_ent, source_kb),
-                        'target_ent': _form_json_entity(t_ent, target_kb),
-                        'label': 0
-                    }
-                    output = predictor.predict_json(json_data, cuda_device)
-                    if output['predicted_label'] == [1.0]:
-                        temp_alignments[json_data['source_ent']['research_entity_id']].append(
-                            (json_data['target_ent']['research_entity_id'],
-                             output['score'][0])
-                        )
+            # sum regional contributions to similarity
+            global_sum = 0.0
+            distance_weights = 0.0
+            for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
+                    if (s_neighbor_id, t_neighbor_id) in local_scores:
+                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
+                        distance_weights += d_weight
+                        global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
+            global_score = global_sum / distance_weights
+            temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
 
-        alignment = []
+        global_matches = []
 
         for s_ent_id, matches in temp_alignments.items():
             if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.NN_SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+                m_sort = sorted(matches, key=lambda p: p[2], reverse=True)
+                if m_sort[0][2] >= constants.NN_SCORE_THRESHOLD:
+                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][2]))
 
-        return alignment
+        sys.stdout.write('Global matches: %i\n' % len(global_matches))
+
+        return alignment + global_matches
 
     def align(self,
               model_type, model_path,

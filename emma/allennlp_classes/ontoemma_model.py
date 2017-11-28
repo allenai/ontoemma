@@ -136,14 +136,17 @@ class OntoEmmaNN(Model):
         s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
         encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
+        s_ent_aliases_mask = torch.sum(encoded_s_ent_aliases, 2) != 0.0
+        averaged_s_ent_aliases = self.name_boe_encoder(encoded_s_ent_aliases, s_ent_aliases_mask)
+
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
         t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
-        # average across non-zero entries
-        best_alias_similarity, best_s_ent_alias, best_t_ent_alias = self._get_max_sim(
-            encoded_s_ent_aliases, encoded_t_ent_aliases
-        )
+        t_ent_aliases_mask = torch.sum(encoded_t_ent_aliases, 2) != 0.0
+        averaged_t_ent_aliases = self.name_boe_encoder(encoded_t_ent_aliases, t_ent_aliases_mask)
+
+        alias_similarity = torch.diag(averaged_s_ent_aliases.mm(averaged_t_ent_aliases.t()), 0)
 
         # embed and encode all definitions
         embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
@@ -176,14 +179,14 @@ class OntoEmmaNN(Model):
         # input into feed forward network (placeholder for concatenating other features)
         s_ent_input = torch.cat(
             [encoded_s_ent_name,
-             best_s_ent_alias,
+             averaged_s_ent_aliases,
              encoded_s_ent_def,
              averaged_s_ent_context
              ],
             dim=-1)
         t_ent_input = torch.cat(
             [encoded_t_ent_name,
-             best_t_ent_alias,
+             averaged_t_ent_aliases,
              encoded_t_ent_def,
              averaged_t_ent_context
              ],
@@ -196,7 +199,7 @@ class OntoEmmaNN(Model):
         # aggregate similarity metrics
         aggregate_embedding_similarity = torch.stack([
             name_similarity,
-            best_alias_similarity,
+            alias_similarity,
             def_similarity,
             context_similarity
         ], dim=-1)
@@ -211,14 +214,15 @@ class OntoEmmaNN(Model):
 
         # run aggregate through a decision layer and sigmoid function
         decision_output = self.decision_feedforward(aggregate_input)
-
         sigmoid_output = self.sigmoid(decision_output)
+        predicted_label = sigmoid_output.round()
 
         # build output dictionary
         output_dict = dict()
         output_dict["score"] = sigmoid_output
-        predicted_label = sigmoid_output.round()
         output_dict["predicted_label"] = predicted_label
+        output_dict["sparse_features"] = sparse_features.squeeze(2).float()
+        output_dict["aggregate_similarities"] = aggregate_embedding_similarity
 
         if label is not None:
             # compute loss and accuracy
