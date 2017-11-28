@@ -8,6 +8,7 @@ import itertools
 import requests
 import jsonlines
 import numpy as np
+import pickle
 from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
@@ -36,6 +37,11 @@ from torch.cuda import device
 class OntoEmma:
     def __init__(self):
         paths = StandardFilePath()
+        mesh_syn_file = os.path.join(paths.ontoemma_synonym_dir, 'mesh_synonyms.pickle')
+        dbpedia_syn_file = os.path.join(paths.ontoemma_synonym_dir, 'dbpedia_synonyms.pickle')
+
+        self.mesh_synonyms = pickle.load(open(mesh_syn_file, 'rb'))
+        self.dbpedia_synonyms = pickle.load(open(dbpedia_syn_file, 'rb'))
 
     @staticmethod
     def load_kb(kb_path):
@@ -84,6 +90,24 @@ class OntoEmma:
 
         sys.stdout.write("\tEntities: %i\n" % len(kb.entities))
 
+        return kb
+
+    def add_synonyms(self, kb):
+        """
+        Add synonyms to kb from MeSH and DBpedia
+        :param kb:
+        :return:
+        """
+        counter = 0
+        for ent in kb.entities:
+            syns = []
+            for a in ent.aliases:
+                syns += self.mesh_synonyms[a]
+                syns += self.dbpedia_synonyms[a]
+            if syns:
+                ent.aliases = list(set(ent.aliases + syns))
+                counter += 1
+        sys.stdout.write('%i entities added synonyms.\n' % counter)
         return kb
 
     @staticmethod
@@ -580,6 +604,10 @@ class OntoEmma:
 
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
+
+        sys.stdout.write("Adding synonyms to KBs from MeSH and DBpedia...\n")
+        source_kb = self.add_synonyms(source_kb)
+        target_kb = self.add_synonyms(target_kb)
 
         # Load similarity predictor
         if cuda_device > 0:
