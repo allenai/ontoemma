@@ -95,10 +95,15 @@ def normalize_string(s):
 
 def tokenize_string(s, tokenizer, stop):
     """
-    Process name string and return tokenized words minus stop words
+    Process name string and return tokenized words minus stop words unless all stop words
     :param s: string
     :param tokenizer:
     :param stop: set of stop words
     :return:
     """
-    return tuple([t for t in tokenizer.tokenize(s) if t not in stop])
+    token_list = [t for t in tokenizer.tokenize(s)]
+    remove_stop = [t for t in token_list if t not in stop]
+    if remove_stop:
+        return tuple(remove_stop)
+    else:
+        return tuple(token_list)
