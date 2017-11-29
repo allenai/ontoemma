@@ -39,6 +39,7 @@ class SparseFeatureGenerator:
         :return:
         """
         norm_ent = dict()
+        norm_ent['research_entity_id'] = ent['research_entity_id']
         norm_ent['canonical_name'] = string_utils.normalize_string(ent['canonical_name'])
         norm_ent['aliases'] = [string_utils.normalize_string(a) for a in ent['aliases']]
         norm_ent['definition'] = string_utils.normalize_string(ent['definition'])
@@ -85,11 +86,13 @@ class SparseFeatureGenerator:
         :return:
         """
 
+        s_ent = self._normalize_ent(s_ent)
+        t_ent = self._normalize_ent(t_ent)
+
         if s_ent['research_entity_id'] in self.token_dict:
             s_name_tokens, s_stem_tokens, s_lemm_tokens, \
             s_char_tokens, s_alias_tokens, s_def_tokens = self.token_dict[s_ent['research_entity_id']]
         else:
-            s_ent = self._normalize_ent(s_ent)
             s_name_tokens, s_stem_tokens, s_lemm_tokens, \
             s_char_tokens, s_alias_tokens, s_def_tokens = self._compute_tokens(s_ent)
             self.token_dict[s_ent['research_entity_id']] = (s_name_tokens, s_stem_tokens, s_lemm_tokens,
@@ -99,7 +102,6 @@ class SparseFeatureGenerator:
             t_name_tokens, t_stem_tokens, t_lemm_tokens, \
             t_char_tokens, t_alias_tokens, t_def_tokens = self.token_dict[t_ent['research_entity_id']]
         else:
-            t_ent = self._normalize_ent(t_ent)
             t_name_tokens, t_stem_tokens, t_lemm_tokens, \
             t_char_tokens, t_alias_tokens, t_def_tokens = self._compute_tokens(t_ent)
             self.token_dict[t_ent['research_entity_id']] = (t_name_tokens, t_stem_tokens, t_lemm_tokens,
