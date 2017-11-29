@@ -9,8 +9,7 @@ IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
 
 # Score threshold for positive alignment
 MIN_SCORE_THRESHOLD = 0.20
-LR_SCORE_THRESHOLD = 0.50
-NN_SCORE_THRESHOLD = 0.95
+MAX_SCORE_THRESHOLD = 0.95
 
 # Minimum size for training data
 MIN_TRAINING_SET_SIZE = 10
@@ -49,4 +48,4 @@ UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
 NUM_STEPS_FOR_KB_REGION = 5
 
 # global similarity iterations
-GLOBAL_SIMILARITY_ITERATIONS = 5
+GLOBAL_SIMILARITY_ITERATIONS = 0

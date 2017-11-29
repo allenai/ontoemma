@@ -242,7 +242,7 @@ class OntoEmma:
             'chd_relations': [e.canonical_name for e in chd_ents]
         }
 
-    def _apply_model(self, model, model_path, config_file):
+    def _apply_model_train(self, model, model_path, config_file):
         """
         Apply loaded model to config_file data and save
         :param model:
@@ -263,21 +263,24 @@ class OntoEmma:
         dev_pairs, dev_labels = self._alignments_to_pairs_and_labels(dev_data_path)
 
         sys.stdout.write('Training data size: %i\n' % len(training_labels))
-        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
         feat_gen_train = SparseFeatureGenerator()
-        training_features = [
-            feat_gen_train.calculate_features(s_ent, t_ent)
-            for s_ent, t_ent in training_pairs
-        ]
+        training_features = []
+        for s_ent, t_ent in tqdm.tqdm(training_pairs, total=len(training_pairs)):
+            training_features.append(
+                feat_gen_train.calculate_features(s_ent, t_ent)
+            )
+
+        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for development pairs
         feat_gen_dev = SparseFeatureGenerator()
-        dev_features = [
-            feat_gen_dev.calculate_features(s_ent, t_ent)
-            for s_ent, t_ent in dev_pairs
-        ]
+        dev_features = []
+        for s_ent, t_ent in tqdm.tqdm(dev_pairs, total=len(dev_pairs)):
+            dev_features.append(
+                feat_gen_dev.calculate_features(s_ent, t_ent)
+            )
 
         model.train(training_features, training_labels)
 
@@ -302,7 +305,7 @@ class OntoEmma:
         :return:
         """
         model = OntoEmmaLRModel()
-        self._apply_model(model, model_path, config_file)
+        self._apply_model_train(model, model_path, config_file)
         return
 
     def _train_rf(self, model_path: str, config_file: str):
@@ -313,7 +316,7 @@ class OntoEmma:
         :return:
         """
         model = OntoEmmaRFModel()
-        self._apply_model(model, model_path, config_file)
+        self._apply_model_train(model, model_path, config_file)
         return
 
     def _train_nn(self, model_path: str, config_file: str):
@@ -378,12 +381,15 @@ class OntoEmma:
         # load evaluation data
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
+        sys.stdout.write('Evaluation data size: %i\n' % len(eval_labels))
+
         # initialize feature generator
         feat_gen = SparseFeatureGenerator()
-        eval_features = [
-            feat_gen.calculate_features(s_ent, t_ent)
-            for s_ent, t_ent in eval_pairs
-        ]
+        eval_features = []
+        for s_ent, t_ent in tqdm.tqdm(eval_pairs, total=len(eval_pairs)):
+            eval_features.append(
+                feat_gen.calculate_features(s_ent, t_ent)
+            )
 
         # compute metrics
         tp, fp, tn, fn = (0, 0, 0, 0)
@@ -391,11 +397,11 @@ class OntoEmma:
 
         for features, label in zip(eval_features, eval_labels):
             prediction = model.predict_entity_pair(features)
-            if prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 1:
+            if prediction[0][1] > constants.MAX_SCORE_THRESHOLD and label == 1:
                 tp += 1
-            elif prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 0:
+            elif prediction[0][1] > constants.MAX_SCORE_THRESHOLD and label == 0:
                 fp += 1
-            elif prediction[0][0] > constants.LR_SCORE_THRESHOLD and label == 1:
+            elif prediction[0][0] > constants.MAX_SCORE_THRESHOLD and label == 1:
                 fn += 1
             else:
                 tn += 1
@@ -486,7 +492,7 @@ class OntoEmma:
         steps = 0
         next_step = [start_ent]
 
-        while steps < constants.LR_SCORE_THRESHOLD:
+        while steps < constants.NUM_STEPS_FOR_KB_REGION:
             this_step = next_step
             next_step = []
             for current_ent in this_step:
@@ -567,12 +573,8 @@ class OntoEmma:
         :param t_kb:
         :return:
         """
-        temp_alignments = defaultdict(list)
-
         # iteratively calculate global similarity scores
         for i in range(0, constants.GLOBAL_SIMILARITY_ITERATIONS):
-            # compute temporary alignments
-            temp_alignments = defaultdict(list)
             global_scores = dict()
             for (s_ent_id, t_ent_id), score in local_scores.items():
                 s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
@@ -593,21 +595,63 @@ class OntoEmma:
                             global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
                 global_score = global_sum / distance_weights
                 global_scores[(s_ent_id, t_ent_id)] = global_score
-                temp_alignments[s_ent_id].append((t_ent_id, local_scores[(s_ent_id, t_ent_id)], global_score))
 
             # set local scores to newly computed global scores
             local_scores = global_scores
 
-        # compute matches based on global scores
+        # keep all alignments about minimum score threshold
+        temp_alignments = defaultdict(list)
+        for (s_ent_id, t_ent_id), score in local_scores.items():
+            if score >= constants.MIN_SCORE_THRESHOLD:
+                temp_alignments[s_ent_id].append((t_ent_id, score))
+
+        # select best match for each source entity
         global_matches = []
         for s_ent_id, matches in temp_alignments.items():
             if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[2], reverse=True)
-                if m_sort[0][2] >= constants.NN_SCORE_THRESHOLD:
-                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][2]))
+                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
+                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
 
         sys.stdout.write('Global matches: %i\n' % len(global_matches))
         return global_matches
+
+    def _apply_model_align(self, model, s_kb, t_kb, cand_sel):
+        """
+        Align kbs with model
+        :param model:
+        :param source_kb:
+        :param target_kb:
+        :param cand_sel:
+        :return:
+        """
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(s_kb, t_kb)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
+
+        feat_gen = SparseFeatureGenerator(cand_sel.s_token_to_idf,
+                                          cand_sel.t_token_to_idf)
+
+        sys.stdout.write("Making predictions...\n")
+        local_scores = dict()
+        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
+                               total=len(s_ent_ids))
+        for s_ent_id in s_ent_tqdm:
+            s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
+            for t_ent_id in cand_sel.select_candidates(
+                    s_ent_id
+            )[:constants.KEEP_TOP_K_CANDIDATES]:
+                if t_ent_id in t_ent_ids:
+                    t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+                    features = [feat_gen.calculate_features(self._form_json_entity(s_ent, s_kb),
+                                                            self._form_json_entity(t_ent, t_kb))]
+                    score = model.predict_entity_pair(features)
+                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
+                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
+
+        global_matches = self._compute_global_similarities(local_scores, s_kb, t_kb)
+
+        return alignment + global_matches
+
 
     def _align_lr(self, model_path, source_kb, target_kb, candidate_selector):
         """
@@ -617,35 +661,10 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
-        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
-
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaLRModel()
         model.load(model_path)
-        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
-                                                   candidate_selector.t_token_to_idf)
-
-        sys.stdout.write("Making predictions...\n")
-        local_scores = dict()
-        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
-                               total=len(s_ent_ids))
-        for s_ent_id in s_ent_tqdm:
-            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                if t_ent_id in t_ent_ids:
-                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                    features = [feature_generator.calculate_features(self._form_json_entity(s_ent, source_kb),
-                                                                     self._form_json_entity(t_ent, target_kb))]
-                    score = model.predict_entity_pair(features)
-                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
-                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
-
-        global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
-
-        return alignment + global_matches
+        return self._apply_model_align(model, source_kb, target_kb, candidate_selector)
 
     def _align_rf(self, model_path, source_kb, target_kb, candidate_selector):
         """
@@ -655,36 +674,10 @@ class OntoEmma:
         :param candidate_selector:
         :return:
         """
-        feature_generator = SparseFeatureGenerator(candidate_selector.s_token_to_idf,
-                                                   candidate_selector.t_token_to_idf)
-
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
-        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
-
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaRFModel()
         model.load(model_path)
-
-        sys.stdout.write("Making predictions...\n")
-        local_scores = dict()
-        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
-                               total=len(s_ent_ids))
-        for s_ent_id in s_ent_tqdm:
-            s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
-            for t_ent_id in candidate_selector.select_candidates(
-                    s_ent_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
-                if t_ent_id in t_ent_ids:
-                    t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
-                    features = [feature_generator.calculate_features(self._form_json_entity(s_ent, source_kb),
-                                                                     self._form_json_entity(t_ent, target_kb))]
-                    score = model.predict_entity_pair(features)
-                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
-                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
-
-        global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
-
-        return alignment + global_matches
+        return self._apply_model_align(model, source_kb, target_kb, candidate_selector)
 
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
