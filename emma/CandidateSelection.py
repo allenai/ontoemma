@@ -37,6 +37,9 @@ class CandidateSelection:
         self.s_token_to_idf = dict()
         self.t_token_to_idf = dict()
 
+        self.words_only = set([])
+        self.words_below_idf_limit = set([])
+
         self._build_map()
 
         self.EVAL_TOP_KS = [1, 2, 5, 10, 20, 50, 100, 200, 500]
@@ -74,6 +77,9 @@ class CandidateSelection:
 
             # combine tokens
             tokens = set(name_tokens).union(set(char_tokens)).union(set(def_tokens))
+
+            self.words_only.update(list(name_tokens))
+            self.words_only.update(list(def_tokens))
 
             # add to ent-to-token map
             ent_to_tokens[ent_id] = tokens
@@ -125,6 +131,13 @@ class CandidateSelection:
             k: string_utils.get_idf(self.t_ent_num, len(self.t_token_to_ents[k]))
             for k in keep_tokens
         }
+
+        for w in self.words_only:
+            if w in keep_tokens and \
+                    (self.s_token_to_idf[w] < constants.IDF_LIMIT or
+                     self.t_token_to_idf[w] < constants.IDF_LIMIT):
+                self.words_below_idf_limit.add(w)
+
         return
 
     def select_candidates(self, s_ent_id):
