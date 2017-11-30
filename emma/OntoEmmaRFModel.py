@@ -7,7 +7,7 @@ from sklearn.feature_extraction import DictVectorizer
 # class for random forest ontology matcher model
 class OntoEmmaRFModel:
     def __init__(self):
-        self.model = RandomForestClassifier(n_jobs=8, random_state=0)
+        self.model = RandomForestClassifier(n_jobs=1, random_state=0)
         self.vectorizer = DictVectorizer(sparse=False)
 
     def save(self, model_path):
