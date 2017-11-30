@@ -75,33 +75,33 @@ class UMLSExtractor(App):
 
         self.done_file = os.path.join(self.OUTPUT_DIR, "processed.txt")
 
-        # sys.stdout.write("Extracting concepts...\n")
-        # concepts = self.extract_concepts()
-        # sys.stdout.write("Number of concepts: %i\n" % len(concepts))
-        #
-        # sys.stdout.write("Extracting concept mappings...\n")
-        # self.extract_mappings(concepts)
-        #
-        # sys.stdout.write("Write mappings to file...\n")
-        # self.write_mappings_to_file()
-        #
-        # sys.stdout.write("Collapsing concepts to KB entities...\n")
-        # kb_entities, aui_to_research_entity_id_dict = self.collapse_concepts(concepts)
-        #
-        # sys.stdout.write("Extracting definitions...\n")
-        # kb_entities = self.extract_definitions(kb_entities, aui_to_research_entity_id_dict)
-        #
-        # sys.stdout.write("Extracting relations...\n")
-        # relations = self.extract_relationships(aui_to_research_entity_id_dict)
-        # sys.stdout.write("Number of relations: %i\n" % len(relations))
-        #
-        # sys.stdout.write("Adding relations to entities...\n")
-        # kb_entities = self.append_relations_to_entities(kb_entities, relations)
-        #
-        # sys.stdout.write("Creating knowledgebases...\n")
-        # self.create_umls_kbs(kb_entities)
+        sys.stdout.write("Extracting concepts...\n")
+        concepts = self.extract_concepts()
+        sys.stdout.write("Number of concepts: %i\n" % len(concepts))
 
-        self.load_mappings_from_file()
+        sys.stdout.write("Extracting concept mappings...\n")
+        self.extract_mappings(concepts)
+
+        sys.stdout.write("Write mappings to file...\n")
+        self.write_mappings_to_file()
+
+        sys.stdout.write("Collapsing concepts to KB entities...\n")
+        kb_entities, aui_to_research_entity_id_dict = self.collapse_concepts(concepts)
+
+        sys.stdout.write("Extracting definitions...\n")
+        kb_entities = self.extract_definitions(kb_entities, aui_to_research_entity_id_dict)
+
+        sys.stdout.write("Extracting relations...\n")
+        relations = self.extract_relationships(aui_to_research_entity_id_dict)
+        sys.stdout.write("Number of relations: %i\n" % len(relations))
+
+        sys.stdout.write("Adding relations to entities...\n")
+        kb_entities = self.append_relations_to_entities(kb_entities, relations)
+
+        sys.stdout.write("Creating knowledgebases...\n")
+        self.create_umls_kbs(kb_entities)
+
+        # self.load_mappings_from_file()
 
         sys.stdout.write("Sampling negative mappings...\n")
         self.extract_negative_mappings()
