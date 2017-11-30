@@ -543,4 +543,5 @@ class KnowledgeBase(object):
         elif fext == '.pickle':
             return self._pickle_dump(kb, filename)
         else:
-            raise NameError('Unknown file type')
+            print('Saving to json, unknown file type...')
+            return self._json_dump(kb, filename)

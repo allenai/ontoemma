@@ -409,8 +409,7 @@ class KBLoader(object):
 
                     # if no name available (usually entity from external KB), replace name with id
                     if entity.canonical_name is None:
-                        entity.canonical_name = entity.research_entity_id
-                        entity.aliases = [entity.canonical_name.lower()]
+                        continue
 
                     # get definition
                     if 'skos' in ns:
@@ -453,7 +452,7 @@ class KBLoader(object):
         return kb
 
     @staticmethod
-    def import_kb(kb_name, kb_filename):
+    def import_kb(kb_name, kb_filename) -> KnowledgeBase:
         """
         Returns a KnowledgeBase object loaded from kb_filename. The KB
         must be one of the supported one below.
@@ -482,7 +481,10 @@ class KBLoader(object):
         elif kb_name == KBLoader.MERGED:
             kb = KnowledgeBase.load(kb_filename)
         else:
-            raise LookupError("Unknown kb_name: {}".format(kb_name))
+            try:
+                kb = KBLoader.import_owl_kb(kb_name, kb_filename)
+            except:
+                raise LookupError("Unknown kb_name: {}".format(kb_name))
 
         # remove the local copy of the raw kb file(s).
         if delete_local_copy:
