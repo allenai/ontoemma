@@ -101,9 +101,5 @@ def tokenize_string(s, tokenizer, stop):
     :param stop: set of stop words
     :return:
     """
-    token_list = [t for t in tokenizer.tokenize(s)]
-    remove_stop = [t for t in token_list if t not in stop]
-    if remove_stop:
-        return tuple(remove_stop)
-    else:
-        return tuple(token_list)
+    remove_stop = [t for t in tokenizer.tokenize(s) if t not in stop]
+    return tuple(remove_stop)
