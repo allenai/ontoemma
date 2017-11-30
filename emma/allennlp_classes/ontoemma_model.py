@@ -18,25 +18,16 @@ from emma.allennlp_classes.boolean_f1 import BooleanF1
 @Model.register("ontoemmaNN")
 class OntoEmmaNN(Model):
     def __init__(self, vocab: Vocabulary,
-                 name_text_field_embedder: TextFieldEmbedder,
-                 context_text_field_embedder: TextFieldEmbedder,
-                 name_rnn_encoder: Seq2VecEncoder,
-                 name_boe_encoder: Seq2VecEncoder,
-                 context_encoder: Seq2VecEncoder,
+                 definition_embedder: TextFieldEmbedder,
+                 definition_encoder: Seq2VecEncoder,
                  siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(OntoEmmaNN, self).__init__(vocab, regularizer)
 
-        self.name_text_field_embedder = name_text_field_embedder
-        self.distributed_name_embedder = BasicTextFieldEmbedder({
-            k: TimeDistributed(v) for k, v in name_text_field_embedder._token_embedders.items()
-        })
-        self.context_text_field_embedder = context_text_field_embedder
-        self.name_rnn_encoder = name_rnn_encoder
-        self.name_boe_encoder = name_boe_encoder
-        self.context_encoder = context_encoder
+        self.definition_embedder = definition_embedder
+        self.definition_encoder = definition_encoder
         self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
         self.sigmoid = torch.nn.Sigmoid()
@@ -45,73 +36,10 @@ class OntoEmmaNN(Model):
 
         initializer(self)
 
-    @staticmethod
-    def _get_max_sim(s_stack, t_stack):
-        """
-        Get max similarity of each pair of corresponding entries from two ListFields
-        :param s_stack:
-        :param t_stack:
-        :return: max similarities, best field in s (max sim), best field in t (max sim)
-        """
-        max_vals = []
-        best_s = []
-        best_t = []
-
-        for s_entry, t_entry in zip(s_stack, t_stack):
-            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
-            if s_maxvals.dim() == 1:
-                s_max = torch.max(s_maxvals)
-                tidx = 0
-            else:
-                s_max, tidx = torch.max(s_maxvals, 1)
-            sidx = sidx.squeeze()[tidx]
-            max_vals.append(s_max)
-            best_s.append(s_entry[sidx].squeeze())
-            best_t.append(t_entry[tidx].squeeze())
-
-        return torch.stack(max_vals, 0).squeeze(-1), \
-               torch.stack(best_s, 0), torch.stack(best_t, 0)
-
-    @staticmethod
-    def _get_avg(stack):
-        """
-        Compute average over non-zero entries
-        :param stack:
-        :return:
-        """
-        avg_vec = []
-        for entry in stack:
-            sums = torch.sum(entry, 1)
-            nonzero = torch.nonzero(sums.data).size()
-            if len(nonzero) > 0:
-                avg_vec.append(torch.sum(entry, 0) / nonzero[0])
-            else:
-                avg_vec.append(entry[0])
-
-        return torch.stack(avg_vec, 0)
-
-    @staticmethod
-    def _average_nonzero(t_stack):
-        output_rows = []
-        for row in t_stack:
-            if row.sum().data[0] == 0.0:
-                output_rows.append(row[0])
-            else:
-                output_rows.append(row.sum(0) / ((row.sum(1) != 0.0).sum().data[0]))
-
-        return torch.stack(output_rows)
-
     @overrides
     def forward(self,  # type: ignore
-                sparse_features: Dict[str, torch.LongTensor],
-                s_ent_name: Dict[str, torch.LongTensor],
-                t_ent_name: Dict[str, torch.LongTensor],
-                s_ent_aliases: Dict[str, torch.LongTensor],
-                t_ent_aliases: Dict[str, torch.LongTensor],
                 s_ent_def: Dict[str, torch.LongTensor],
                 t_ent_def: Dict[str, torch.LongTensor],
-                s_ent_context: Dict[str, torch.LongTensor],
-                t_ent_context: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -119,95 +47,21 @@ class OntoEmmaNN(Model):
         all through a feedforward network, aggregate the outputs and run through
         a decision layer.
         """
-
-        # embed and encode entity names
-        embedded_s_ent_name = self.name_text_field_embedder(s_ent_name)
-        s_ent_name_mask = get_text_field_mask(s_ent_name)
-        encoded_s_ent_name = self.name_rnn_encoder(embedded_s_ent_name, s_ent_name_mask)
-
-        embedded_t_ent_name = self.name_text_field_embedder(t_ent_name)
-        t_ent_name_mask = get_text_field_mask(t_ent_name)
-        encoded_t_ent_name = self.name_rnn_encoder(embedded_t_ent_name, t_ent_name_mask)
-
-        name_similarity = torch.diag(encoded_s_ent_name.mm(encoded_t_ent_name.t()), 0)
-
-        # embed and encode all aliases
-        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
-        s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
-        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
-
-        s_ent_aliases_mask = torch.sum(encoded_s_ent_aliases, 2) != 0.0
-        averaged_s_ent_aliases = self.name_boe_encoder(encoded_s_ent_aliases, s_ent_aliases_mask)
-
-        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
-        t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
-        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
-
-        t_ent_aliases_mask = torch.sum(encoded_t_ent_aliases, 2) != 0.0
-        averaged_t_ent_aliases = self.name_boe_encoder(encoded_t_ent_aliases, t_ent_aliases_mask)
-
-        alias_similarity = torch.diag(averaged_s_ent_aliases.mm(averaged_t_ent_aliases.t()), 0)
-
         # embed and encode all definitions
-        embedded_s_ent_def = self.context_text_field_embedder(s_ent_def)
+        embedded_s_ent_def = self.definition_embedder(s_ent_def)
         s_ent_def_mask = get_text_field_mask(s_ent_def)
-        encoded_s_ent_def = self.context_encoder(embedded_s_ent_def, s_ent_def_mask)
+        encoded_s_ent_def = self.definition_encoder(embedded_s_ent_def, s_ent_def_mask)
 
-        embedded_t_ent_def = self.context_text_field_embedder(t_ent_def)
+        embedded_t_ent_def = self.definition_embedder(t_ent_def)
         t_ent_def_mask = get_text_field_mask(t_ent_def)
-        encoded_t_ent_def = self.context_encoder(embedded_t_ent_def, t_ent_def_mask)
-
-        def_similarity = torch.diag(encoded_s_ent_def.mm(encoded_t_ent_def.t()), 0)
-
-        # embed and encode all contexts
-        embedded_s_ent_context = self.context_text_field_embedder(s_ent_context)
-        s_ent_context_mask = get_text_field_mask(s_ent_context)
-        encoded_s_ent_context = TimeDistributed(self.context_encoder)(embedded_s_ent_context, s_ent_context_mask)
-
-        s_ent_context_mask = torch.sum(encoded_s_ent_context, 2) != 0.0
-        averaged_s_ent_context = self.name_boe_encoder(encoded_s_ent_context, s_ent_context_mask)
-
-        embedded_t_ent_context = self.context_text_field_embedder(t_ent_context)
-        t_ent_context_mask = get_text_field_mask(t_ent_context)
-        encoded_t_ent_context = TimeDistributed(self.context_encoder)(embedded_t_ent_context, t_ent_context_mask)
-
-        t_ent_context_mask = torch.sum(encoded_t_ent_context, 2) != 0.0
-        averaged_t_ent_context = self.name_boe_encoder(encoded_t_ent_context, t_ent_context_mask)
-
-        context_similarity = torch.diag(averaged_s_ent_context.mm(averaged_t_ent_context.t()), 0)
-
-        # input into feed forward network (placeholder for concatenating other features)
-        s_ent_input = torch.cat(
-            [encoded_s_ent_name,
-             averaged_s_ent_aliases,
-             encoded_s_ent_def,
-             averaged_s_ent_context
-             ],
-            dim=-1)
-        t_ent_input = torch.cat(
-            [encoded_t_ent_name,
-             averaged_t_ent_aliases,
-             encoded_t_ent_def,
-             averaged_t_ent_context
-             ],
-            dim=-1)
+        encoded_t_ent_def = self.definition_encoder(embedded_t_ent_def, t_ent_def_mask)
 
         # run both entity representations through feed forward network
-        s_ent_output = self.siamese_feedforward(s_ent_input)
-        t_ent_output = self.siamese_feedforward(t_ent_input)
-
-        # aggregate similarity metrics
-        aggregate_embedding_similarity = torch.stack([
-            name_similarity,
-            alias_similarity,
-            def_similarity,
-            context_similarity
-        ], dim=-1)
+        s_ent_output = self.siamese_feedforward(encoded_s_ent_def)
+        t_ent_output = self.siamese_feedforward(encoded_t_ent_def)
 
         # concatenate outputs
         aggregate_input = torch.cat([
-            sparse_features.squeeze(2).float(),
-            aggregate_embedding_similarity,
             s_ent_output,
             t_ent_output
         ], dim=-1)
@@ -221,8 +75,6 @@ class OntoEmmaNN(Model):
         output_dict = dict()
         output_dict["score"] = sigmoid_output
         output_dict["predicted_label"] = predicted_label
-        output_dict["sparse_features"] = sparse_features.squeeze(2).float()
-        output_dict["aggregate_similarities"] = aggregate_embedding_similarity
 
         if label is not None:
             # compute loss and accuracy
@@ -248,11 +100,8 @@ class OntoEmmaNN(Model):
 
     @classmethod
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
-        name_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_text_field_embedder"))
-        context_text_field_embedder = TextFieldEmbedder.from_params(vocab, params.pop("context_text_field_embedder"))
-        name_rnn_encoder = Seq2VecEncoder.from_params(params.pop("name_rnn_encoder"))
-        name_boe_encoder = Seq2VecEncoder.from_params(params.pop("name_boe_encoder"))
-        context_encoder = Seq2VecEncoder.from_params(params.pop("context_encoder"))
+        definition_embedder = TextFieldEmbedder.from_params(vocab, params.pop("definition_embedder"))
+        definition_encoder = Seq2VecEncoder.from_params(params.pop("definition_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
 
@@ -264,11 +113,8 @@ class OntoEmmaNN(Model):
         regularizer = RegularizerApplicator.from_params(reg_params) if reg_params is not None else None
 
         return cls(vocab=vocab,
-                   name_text_field_embedder=name_text_field_embedder,
-                   context_text_field_embedder=context_text_field_embedder,
-                   name_rnn_encoder=name_rnn_encoder,
-                   name_boe_encoder=name_boe_encoder,
-                   context_encoder=context_encoder,
+                   definition_embedder=definition_embedder,
+                   definition_encoder=definition_encoder,
                    siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
                    initializer=initializer,
