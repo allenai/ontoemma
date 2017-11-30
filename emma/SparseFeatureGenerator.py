@@ -1,3 +1,6 @@
+import os
+import sys
+import pickle
 import spacy
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
@@ -8,7 +11,6 @@ from nltk.stem.wordnet import WordNetLemmatizer
 import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
-
 # class for generating sparse features between entities of two KBs
 class SparseFeatureGenerator:
     def __init__(self, s_token_to_idf: dict = None, t_token_to_idf: dict = None):
@@ -17,19 +19,19 @@ class SparseFeatureGenerator:
         :param s_token_to_idf:
         :param t_token_to_idf:
         """
+        self.STOP = set(stopwords.words('english'))
+
         if s_token_to_idf and t_token_to_idf:
             s_tokens_to_void = [k for k, v in s_token_to_idf.items() if v < constants.IDF_LIMIT]
             t_tokens_to_void = [k for k, v in t_token_to_idf.items() if v < constants.IDF_LIMIT]
-            self.STOP = set(stopwords.words('english') + s_tokens_to_void + t_tokens_to_void)
-        else:
-            self.STOP = set(stopwords.words('english'))
+            self.idf_stop = set(s_tokens_to_void + t_tokens_to_void)
+            self.STOP = self.STOP.union(self.idf_stop)
 
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
         self.stemmer = SnowballStemmer("english")
         self.lemmatizer = WordNetLemmatizer()
         self.nlp = spacy.load('en')
         self.token_dict = dict()
-
 
     @staticmethod
     def _normalize_ent(ent: dict):
@@ -43,8 +45,13 @@ class SparseFeatureGenerator:
         norm_ent['canonical_name'] = string_utils.normalize_string(ent['canonical_name'])
         norm_ent['aliases'] = [string_utils.normalize_string(a) for a in ent['aliases']]
         norm_ent['definition'] = string_utils.normalize_string(ent['definition'])
+        norm_ent['wiki_entities'] = [string_utils.normalize_string(s) for s in ent['wiki_entities']]
+        norm_ent['mesh_synonyms'] = [string_utils.normalize_string(s) for s in ent['mesh_synonyms']]
+        norm_ent['dbpedia_synonyms'] = [string_utils.normalize_string(s) for s in ent['dbpedia_synonyms']]
         norm_ent['par_relations'] = set([string_utils.normalize_string(i) for i in ent['par_relations']])
         norm_ent['chd_relations'] = set([string_utils.normalize_string(i) for i in ent['chd_relations']])
+        norm_ent['sib_relations'] = set([string_utils.normalize_string(i) for i in ent['sib_relations']])
+        norm_ent['syn_relations'] = set([string_utils.normalize_string(i) for i in ent['syn_relations']])
         return norm_ent
 
     def _compute_tokens(self, ent: dict):
@@ -184,9 +191,13 @@ class SparseFeatureGenerator:
         # has any relationships
         has_parents = (len(s_ent['par_relations']) > 0 and len(t_ent['par_relations']) > 0)
         has_children = (len(s_ent['chd_relations']) > 0 and len(t_ent['chd_relations']) > 0)
+        has_siblings = (len(s_ent['sib_relations']) > 0 and len(t_ent['sib_relations']) > 0)
+        has_synonyms = (len(s_ent['syn_relations']) > 0 and len(t_ent['syn_relations']) > 0)
 
         percent_parents_in_common = 0.0
         percent_children_in_common = 0.0
+        percent_siblings_in_common = 0.0
+        percent_synonyms_in_common = 0.0
 
         # any relationships in common
         if has_parents:
@@ -200,6 +211,18 @@ class SparseFeatureGenerator:
             percent_children_in_common = len(
                 s_ent['chd_relations'].intersection(t_ent['chd_relations'])
             ) / max_children_in_common
+
+        if has_siblings:
+            max_siblings_in_common = (len(s_ent['sib_relations']) + len(t_ent['sib_relations'])) / 2
+            percent_siblings_in_common = len(
+                s_ent['sib_relations'].intersection(t_ent['sib_relations'])
+            ) / max_siblings_in_common
+
+        if has_synonyms:
+            max_synonyms_in_common = (len(s_ent['syn_relations']) + len(t_ent['syn_relations'])) / 2
+            percent_synonyms_in_common = len(
+                s_ent['syn_relations'].intersection(t_ent['syn_relations'])
+            ) / max_synonyms_in_common
 
         s_acronyms = [(i[0] for i in a) for a in s_alias_tokens]
         t_acronyms = [(i[0] for i in a) for a in t_alias_tokens]
@@ -227,6 +250,21 @@ class SparseFeatureGenerator:
             set(s_def_tokens), set(t_def_tokens)
         )
 
+        num_mesh_syn_shared = len(set(s_ent['mesh_synonyms']).intersection(set(t_ent['mesh_synonyms'])))
+        num_total_mesh_syn = len(set(s_ent['mesh_synonyms']).union(set(t_ent['mesh_synonyms'])))
+        shares_mesh_synonym = (num_mesh_syn_shared > 0)
+        mesh_syn_jaccard_sim = num_mesh_syn_shared / num_total_mesh_syn
+
+        num_dbp_syn_shared = len(set(s_ent['dbpedia_synonyms']).intersection(set(t_ent['dbpedia_synonyms'])))
+        num_total_dbp_syn = len(set(s_ent['dbpedia_synonyms']).union(set(t_ent['dbpedia_synonyms'])))
+        shares_dbpedia_synonym = (num_dbp_syn_shared > 0)
+        dbpedia_syn_jaccard_sim = num_dbp_syn_shared / num_total_dbp_syn
+
+        num_wiki_ent_shared = len(set(s_ent['wiki_entities']).intersection(set(t_ent['wiki_entities'])))
+        num_total_wiki_ent = len(set(s_ent['wiki_entities']).union(set(t_ent['wiki_entities'])))
+        shares_wikipedia_entity = (num_wiki_ent_shared > 0)
+        wikipedia_ent_jaccard_sim = num_wiki_ent_shared / num_total_wiki_ent
+
         features = dict()
 
         features['has_same_canonical_name'] = has_same_canonical_name
@@ -249,15 +287,25 @@ class SparseFeatureGenerator:
 
         features['percent_parents_in_common'] = percent_parents_in_common
         features['percent_children_in_common'] = percent_children_in_common
+        features['percent_siblings_in_common'] = percent_siblings_in_common
+        features['percent_synonyms_in_common'] = percent_synonyms_in_common
         features['has_same_acronym'] = has_same_acronym
+
         features['has_same_name_root_word'] = has_same_name_root_word
         features['has_same_name_chunk_heads'] = has_same_name_chunk_heads
-
         features['name_chunk_heads_jaccard_similarity'] = name_chunk_heads_jaccard_similarity
         features['has_same_alias_root_word'] = has_same_alias_root_word
         features['has_same_alias_chunk_heads'] = has_same_alias_chunk_heads
+
         features['alias_chunk_heads_jaccard_similarity'] = alias_chunk_heads_jaccard_similarity
         features['def_jaccard_similarity'] = def_jaccard_similarity
+        features['shares_mesh_synonym'] = shares_mesh_synonym
+        features['mesh_syn_jaccard_sim'] = mesh_syn_jaccard_sim
+        features['shares_dbpedia_synonym'] = shares_dbpedia_synonym
+
+        features['dbpedia_syn_jaccard_sim'] = dbpedia_syn_jaccard_sim
+        features['shares_wikipedia_entity'] = shares_wikipedia_entity
+        features['wikipedia_ent_jaccard_sim'] = wikipedia_ent_jaccard_sim
 
         return features
 
