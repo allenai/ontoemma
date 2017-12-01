@@ -70,7 +70,7 @@ class CandidateSelection:
                 char_tokens += [
                     ''.join(c)
                     for c in
-                    string_utils.get_character_n_grams(string_utils.normalize_string(name), constants.NGRAM_SIZE)
+                    string_utils.get_character_n_grams(name, constants.NGRAM_SIZE)
                 ]
 
             def_tokens = string_utils.tokenize_string(ent.definition, self.tokenizer, self.STOP)
