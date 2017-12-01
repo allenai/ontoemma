@@ -9,10 +9,13 @@ import requests
 import jsonlines
 import numpy as np
 import pickle
+from copy import copy
 from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+
+from scipy.sparse import lil_matrix
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.OntoEmmaRFModel import OntoEmmaRFModel
@@ -20,6 +23,8 @@ from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.SparseFeatureGenerator import SparseFeatureGenerator
+from emma.RuleBasedAligner import RuleBasedAligner
+import emma.utils.string_utils as string_utils
 from emma.paths import StandardFilePath
 import emma.constants as constants
 
@@ -38,11 +43,6 @@ from torch.cuda import device
 class OntoEmma:
     def __init__(self):
         paths = StandardFilePath()
-        mesh_syn_file = os.path.join(paths.ontoemma_synonym_dir, 'mesh_synonyms.pickle')
-        dbpedia_syn_file = os.path.join(paths.ontoemma_synonym_dir, 'dbpedia_synonyms.pickle')
-
-        self.mesh_synonyms = pickle.load(open(mesh_syn_file, 'rb'))
-        self.dbpedia_synonyms = pickle.load(open(dbpedia_syn_file, 'rb'))
 
     @staticmethod
     def load_kb(kb_path):
@@ -91,24 +91,6 @@ class OntoEmma:
 
         sys.stdout.write("\tEntities: %i\n" % len(kb.entities))
 
-        return kb
-
-    def add_synonyms(self, kb):
-        """
-        Add synonyms to kb from MeSH and DBpedia
-        :param kb:
-        :return:
-        """
-        counter = 0
-        for ent in kb.entities:
-            syns = []
-            for a in ent.aliases:
-                syns += self.mesh_synonyms[a]
-                syns += self.dbpedia_synonyms[a]
-            if syns:
-                ent.aliases = list(set(ent.aliases + syns))
-                counter += 1
-        sys.stdout.write('%i entities added synonyms.\n' % counter)
         return kb
 
     @staticmethod
@@ -216,31 +198,95 @@ class OntoEmma:
         return pairs, labels
 
     @staticmethod
-    def _form_json_entity(ent_to_json: KBEntity, kb: KnowledgeBase):
+    def _form_json_entity_small(ent_to_json: KBEntity):
         """
-        Forms json representation of entity from kb
+        Forms json representation of entity from kb without relations
         :param ent_to_json:
         :param kb:
         :return:
         """
-        all_rels = [kb.relations[r_id] for r_id in ent_to_json.relation_ids]
-        par_ents = [
-            kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-            if r.relation_type in constants.UMLS_PARENT_REL_LABELS
-        ]
-        chd_ents = [
-            kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-            if r.relation_type in constants.UMLS_CHILD_REL_LABELS
-        ]
         return {
             'research_entity_id': ent_to_json.research_entity_id,
             'canonical_name': ent_to_json.canonical_name,
             'aliases': ent_to_json.aliases,
             'definition': ent_to_json.definition,
             'other_contexts': ent_to_json.other_contexts,
-            'par_relations': [e.canonical_name for e in par_ents],
-            'chd_relations': [e.canonical_name for e in chd_ents]
+            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
+            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
+            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms']
         }
+
+    def _form_json_entity(self, ent_to_json: KBEntity, kb: KnowledgeBase):
+        """
+        Forms json representation of entity from kb
+        :param ent_to_json:
+        :param kb:
+        :return:
+        """
+        return {
+            'research_entity_id': ent_to_json.research_entity_id,
+            'canonical_name': ent_to_json.canonical_name,
+            'aliases': ent_to_json.aliases,
+            'definition': ent_to_json.definition,
+            'other_contexts': ent_to_json.other_contexts,
+            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
+            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
+            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms'],
+            'par_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['par_relations'] if e is not None],
+            'chd_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['chd_relations'] if e is not None],
+            'sib_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['sib_relations'] if e is not None],
+            'syn_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['syn_relations'] if e is not None]
+        }
+
+    @staticmethod
+    def _normalize_kb(kb):
+        """
+        Normalize all strings in kb
+        :param kb:
+        :return:
+        """
+        for ent in kb.entities:
+            ent.canonical_name = string_utils.normalize_string(ent.canonical_name)
+            ent.aliases = [string_utils.normalize_string(a) for a in ent.aliases]
+            ent.definition = string_utils.normalize_string(ent.definition)
+            ent.additional_details['wiki_entities'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['wiki_entities']
+            ]
+            ent.additional_details['mesh_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['mesh_synonynms']
+            ]
+            ent.additional_details['dbpedia_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['dbpedia_synonyms']
+            ]
+
+            all_rels = [kb.relations[r_id] for r_id in ent.relation_ids]
+            par_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
+            ]
+            chd_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
+            ]
+            sib_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SIBLING_REL_LABELS
+            ]
+            syn_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SYNONYM_REL_LABELS
+            ]
+
+            ent.additional_details['par_relations'] = list(set(par_ents))
+            ent.additional_details['chd_relations'] = list(set(chd_ents))
+            ent.additional_details['sib_relations'] = list(set(sib_ents))
+            ent.additional_details['syn_relations'] = list(set(syn_ents))
+
+        return kb
 
     def _apply_model_train(self, model, model_path, config_file):
         """
@@ -504,6 +550,9 @@ class OntoEmma:
                         regions[next_ent].append((current_ent.research_entity_id, t))
                         next_step.append(kb.get_entity_by_research_entity_id(next_ent))
             steps += 1
+
+        # delete start entity
+        del regions[start_ent.research_entity_id]
         return regions
 
     @staticmethod
@@ -565,6 +614,31 @@ class OntoEmma:
 
         return alignment, s_remaining, t_remaining
 
+    def _compute_best_alignment(self, scores, s_kb, t_kb):
+        """
+        Compute best bipartite alignment between s_kb and t_kb based on scores
+        :param scores:
+        :param s_kb:
+        :param t_kb:
+        :return:
+        """
+        # keep all alignments about minimum score threshold
+        temp_alignments = defaultdict(list)
+        for (s_ent_id, t_ent_id), score in scores.items():
+            if score >= constants.MIN_SCORE_THRESHOLD:
+                temp_alignments[s_ent_id].append((t_ent_id, score))
+
+        # select best match for each source entity
+        alignment = []
+
+        for s_ent_id, matches in temp_alignments.items():
+            if len(matches) > 0:
+                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
+                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+
+        return alignment
+
     def _compute_global_similarities(self, local_scores, s_kb, t_kb):
         """
         Compute global similarities based on scores in local_scores
@@ -573,10 +647,14 @@ class OntoEmma:
         :param t_kb:
         :return:
         """
+        updated_local_scores = copy(local_scores)
+
         # iteratively calculate global similarity scores
         for i in range(0, constants.GLOBAL_SIMILARITY_ITERATIONS):
             global_scores = dict()
-            for (s_ent_id, t_ent_id), score in local_scores.items():
+
+            # iterate through all alignments
+            for (s_ent_id, t_ent_id), score in updated_local_scores.items():
                 s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
                 t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
 
@@ -588,30 +666,19 @@ class OntoEmma:
                 global_sum = 0.0
                 distance_weights = 0.0
                 for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
-                    if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]):
-                        if (s_neighbor_id, t_neighbor_id) in local_scores:
-                            d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
-                            distance_weights += d_weight
-                            global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
+                    if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]) and \
+                                    (s_neighbor_id, t_neighbor_id) in local_scores:
+                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
+                        distance_weights += d_weight
+                        global_sum += d_weight * local_scores[(s_neighbor_id, t_neighbor_id)]
                 global_score = global_sum / distance_weights
                 global_scores[(s_ent_id, t_ent_id)] = global_score
 
             # set local scores to newly computed global scores
-            local_scores = global_scores
+            updated_local_scores = copy(global_scores)
 
-        # keep all alignments about minimum score threshold
-        temp_alignments = defaultdict(list)
-        for (s_ent_id, t_ent_id), score in local_scores.items():
-            if score >= constants.MIN_SCORE_THRESHOLD:
-                temp_alignments[s_ent_id].append((t_ent_id, score))
-
-        # select best match for each source entity
-        global_matches = []
-        for s_ent_id, matches in temp_alignments.items():
-            if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
-                    global_matches.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+        # maximum bipartite matching
+        max_flow, global_matches = self._compute_best_alignment(local_scores, s_kb, t_kb)
 
         sys.stdout.write('Global matches: %i\n' % len(global_matches))
         return global_matches
@@ -625,29 +692,38 @@ class OntoEmma:
         :param cand_sel:
         :return:
         """
+
+        sys.stdout.write("Finding string equivalences...\n")
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(s_kb, t_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
-        feat_gen = SparseFeatureGenerator(cand_sel.s_token_to_idf,
-                                          cand_sel.t_token_to_idf)
+        local_scores = dict()
+        for s_id, t_id, score in alignment:
+            local_scores[(s_id, t_id)] = 1.0
+
+        feat_gen = SparseFeatureGenerator()
 
         sys.stdout.write("Making predictions...\n")
-        local_scores = dict()
+
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
                                total=len(s_ent_ids))
+
         for s_ent_id in s_ent_tqdm:
             s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
-            for t_ent_id in cand_sel.select_candidates(
-                    s_ent_id
-            )[:constants.KEEP_TOP_K_CANDIDATES]:
+            if s_ent.canonical_name == s_ent_id:
+                continue
+            for t_ent_id in cand_sel.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                 if t_ent_id in t_ent_ids:
                     t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+                    if t_ent.canonical_name == t_ent_id:
+                        continue
                     features = [feat_gen.calculate_features(self._form_json_entity(s_ent, s_kb),
                                                             self._form_json_entity(t_ent, t_kb))]
                     score = model.predict_entity_pair(features)
                     if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
                         local_scores[(s_ent_id, t_ent_id)] = score[0][1]
 
+        sys.stdout.write("Propagating global scores...\n")
         global_matches = self._compute_global_similarities(local_scores, s_kb, t_kb)
 
         return alignment + global_matches
@@ -696,10 +772,6 @@ class OntoEmma:
         alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
-        sys.stdout.write("Adding synonyms to KBs from MeSH and DBpedia...\n")
-        source_kb = self.add_synonyms(source_kb)
-        target_kb = self.add_synonyms(target_kb)
-
         # Load similarity predictor
         if cuda_device > 0:
             with device(cuda_device):
@@ -712,7 +784,7 @@ class OntoEmma:
         sys.stdout.write("Making predictions...\n")
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
                                total=len(s_ent_ids))
-        local_scores = dict()
+        local_scores = defaultdict(float)
 
         batch_json_data = []
 
@@ -765,7 +837,7 @@ class OntoEmma:
         :param model_type: type of model
         :param model_path: path to ontoemma model
         :param s_kb_path: path to source KB
-        :param t_kb_path: path to target KB
+        :param t_kb_path: path to target K
         :param gold_path: path to gold alignment between source and target KBs
         :param output_path: path to write output alignment
         :param cuda_device: GPU device number
@@ -782,6 +854,10 @@ class OntoEmma:
         sys.stdout.write("Loading KBs...\n")
         s_kb = self.load_kb(s_kb_path)
         t_kb = self.load_kb(t_kb_path)
+        
+        sys.stdout.write("Normalizing KBs...\n")
+        s_kb = self._normalize_kb(s_kb)
+        t_kb = self._normalize_kb(t_kb)
 
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
