@@ -103,3 +103,14 @@ def tokenize_string(s, tokenizer, stop):
     """
     remove_stop = [t for t in tokenizer.tokenize(s) if t not in stop]
     return tuple(remove_stop)
+
+def remove_stop(s, tokenizer, stop):
+    """
+    Tokenize, remove stop words, and glue back together
+    :param s: string
+    :param tokenizer:
+    :param stop: set of stop words
+    :return:
+    """
+    tokens = [t for t in tokenizer.tokenize(s) if t not in stop]
+    return ' '.join(tokens)
