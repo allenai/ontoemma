@@ -21,7 +21,6 @@ from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.SparseFeatureGenerator import SparseFeatureGenerator
-from emma.RuleBasedAligner import RuleBasedAligner
 from emma.utils.modified_hungarian import ModifiedHungarian
 import emma.utils.string_utils as string_utils
 from emma.paths import StandardFilePath
