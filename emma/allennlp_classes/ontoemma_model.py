@@ -65,8 +65,8 @@ class OntoEmmaNN(Model):
 
     @overrides
     def forward(self,  # type: ignore
-                s_ent_name: Dict[str, torch.LongTensor],
-                t_ent_name: Dict[str, torch.LongTensor],
+                s_ent_alias: Dict[str, torch.LongTensor],
+                t_ent_alias: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -75,12 +75,12 @@ class OntoEmmaNN(Model):
         a decision layer.
         """
         # embed and encode all aliases
-        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
-        s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
+        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_alias)
+        s_ent_aliases_mask = get_text_field_mask(s_ent_alias)
         encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
-        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
-        t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
+        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_alias)
+        t_ent_aliases_mask = get_text_field_mask(t_ent_alias)
         encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         # average across non-zero entries
