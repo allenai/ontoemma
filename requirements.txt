@@ -10,3 +10,4 @@ jsonlines==1.2.0
 pandas==0.21.0
 spacy==1.9.0
 wikipedia==1.4.0
+munkres==1.0.12
