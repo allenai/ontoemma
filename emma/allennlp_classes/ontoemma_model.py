@@ -27,6 +27,9 @@ class OntoEmmaNN(Model):
         super(OntoEmmaNN, self).__init__(vocab, regularizer)
 
         self.name_embedder = name_embedder
+        self.distributed_name_embedder = BasicTextFieldEmbedder({
+            k: TimeDistributed(v) for k, v in name_embedder._token_embedders.items()
+        })
         self.name_encoder = name_encoder
         self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
