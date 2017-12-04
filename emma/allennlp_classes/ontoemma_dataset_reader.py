@@ -46,12 +46,13 @@ class OntologyMatchingDatasetReader(DatasetReader):
     """
     def __init__(self,
                  tokenizer: Tokenizer = None,
-                 token_only_indexer: Dict[str, TokenIndexer] = None) -> None:
-        self._token_only_indexer = token_only_indexer or \
-                                   {'tokens': SingleIdTokenIndexer(namespace="tokens")}
+                 name_token_indexer: Dict[str, TokenIndexer] = None) -> None:
+        self._name_token_indexer = name_token_indexer or \
+                                   {'tokens': SingleIdTokenIndexer(namespace="tokens"),
+                                    'token_characters': TokenCharactersIndexer(namespace="token_characters")}
         self._tokenizer = tokenizer or WordTokenizer()
 
-        self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
+        self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._name_token_indexer)
 
     @overrides
     def read(self, file_path):
@@ -87,12 +88,12 @@ class OntologyMatchingDatasetReader(DatasetReader):
         fields: Dict[str, Field] = {}
 
         # add entity definition fields
-        fields['s_ent_def'] = TextField(
-            self._tokenizer.tokenize(s_ent['definition']), self._token_only_indexer
-        ) if s_ent['definition'] else self._empty_token_text_field
-        fields['t_ent_def'] = TextField(
-            self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
-        ) if t_ent['definition'] else self._empty_token_text_field
+        fields['s_ent_name'] = TextField(
+            self._tokenizer.tokenize(s_ent['canonical_name']), self._name_token_indexer
+        ) if s_ent['canonical_name'] else self._empty_token_text_field
+        fields['t_ent_name'] = TextField(
+            self._tokenizer.tokenize(t_ent['canonical_name']), self._name_token_indexer
+        ) if t_ent['canonical_name'] else self._empty_token_text_field
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
@@ -102,7 +103,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
     @classmethod
     def from_params(cls, params: Params) -> 'OntologyMatchingDatasetReader':
         tokenizer = Tokenizer.from_params(params.pop('tokenizer', {}))
-        token_only_indexer = TokenIndexer.dict_from_params(params.pop('token_only_indexer', {}))
+        name_token_indexer = TokenIndexer.dict_from_params(params.pop('name_token_indexer', {}))
         params.assert_empty(cls.__name__)
         return OntologyMatchingDatasetReader(tokenizer=tokenizer,
-                                             token_only_indexer=token_only_indexer)
+                                             name_token_indexer=name_token_indexer)

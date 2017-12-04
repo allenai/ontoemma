@@ -18,16 +18,16 @@ from emma.allennlp_classes.boolean_f1 import BooleanF1
 @Model.register("ontoemmaNN")
 class OntoEmmaNN(Model):
     def __init__(self, vocab: Vocabulary,
-                 definition_embedder: TextFieldEmbedder,
-                 definition_encoder: Seq2VecEncoder,
+                 name_embedder: TextFieldEmbedder,
+                 name_encoder: Seq2VecEncoder,
                  siamese_feedforward: FeedForward,
                  decision_feedforward: FeedForward,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(OntoEmmaNN, self).__init__(vocab, regularizer)
 
-        self.definition_embedder = definition_embedder
-        self.definition_encoder = definition_encoder
+        self.name_embedder = name_embedder
+        self.name_encoder = name_encoder
         self.siamese_feedforward = siamese_feedforward
         self.decision_feedforward = decision_feedforward
         self.sigmoid = torch.nn.Sigmoid()
@@ -38,8 +38,8 @@ class OntoEmmaNN(Model):
 
     @overrides
     def forward(self,  # type: ignore
-                s_ent_def: Dict[str, torch.LongTensor],
-                t_ent_def: Dict[str, torch.LongTensor],
+                s_ent_name: Dict[str, torch.LongTensor],
+                t_ent_name: Dict[str, torch.LongTensor],
                 label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
@@ -47,18 +47,18 @@ class OntoEmmaNN(Model):
         all through a feedforward network, aggregate the outputs and run through
         a decision layer.
         """
-        # embed and encode all definitions
-        embedded_s_ent_def = self.definition_embedder(s_ent_def)
-        s_ent_def_mask = get_text_field_mask(s_ent_def)
-        encoded_s_ent_def = self.definition_encoder(embedded_s_ent_def, s_ent_def_mask)
+        # embed and encode all canonical names
+        embedded_s_ent_name = self.name_embedder(s_ent_name)
+        s_ent_name_mask = get_text_field_mask(s_ent_name)
+        encoded_s_ent_name = self.name_encoder(embedded_s_ent_name, s_ent_name_mask)
 
-        embedded_t_ent_def = self.definition_embedder(t_ent_def)
-        t_ent_def_mask = get_text_field_mask(t_ent_def)
-        encoded_t_ent_def = self.definition_encoder(embedded_t_ent_def, t_ent_def_mask)
+        embedded_t_ent_name = self.name_embedder(t_ent_name)
+        t_ent_name_mask = get_text_field_mask(t_ent_name)
+        encoded_t_ent_name = self.name_encoder(embedded_t_ent_name, t_ent_name_mask)
 
         # run both entity representations through feed forward network
-        s_ent_output = self.siamese_feedforward(encoded_s_ent_def)
-        t_ent_output = self.siamese_feedforward(encoded_t_ent_def)
+        s_ent_output = self.siamese_feedforward(encoded_s_ent_name)
+        t_ent_output = self.siamese_feedforward(encoded_t_ent_name)
 
         # concatenate outputs
         aggregate_input = torch.cat([
@@ -75,8 +75,8 @@ class OntoEmmaNN(Model):
         output_dict = dict()
         output_dict["score"] = sigmoid_output
         output_dict["predicted_label"] = predicted_label
-        output_dict["s_def_encoding"] = s_ent_output
-        output_dict["t_ent_encoding"] = t_ent_output
+        output_dict["s_name_encoding"] = s_ent_output
+        output_dict["t_name_encoding"] = t_ent_output
 
         if label is not None:
             # compute loss and accuracy
@@ -102,8 +102,8 @@ class OntoEmmaNN(Model):
 
     @classmethod
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'OntoEmmaNN':
-        definition_embedder = TextFieldEmbedder.from_params(vocab, params.pop("definition_embedder"))
-        definition_encoder = Seq2VecEncoder.from_params(params.pop("definition_encoder"))
+        name_embedder = TextFieldEmbedder.from_params(vocab, params.pop("name_embedder"))
+        name_encoder = Seq2VecEncoder.from_params(params.pop("name_encoder"))
         siamese_feedforward = FeedForward.from_params(params.pop("siamese_feedforward"))
         decision_feedforward = FeedForward.from_params(params.pop("decision_feedforward"))
 
@@ -115,8 +115,8 @@ class OntoEmmaNN(Model):
         regularizer = RegularizerApplicator.from_params(reg_params) if reg_params is not None else None
 
         return cls(vocab=vocab,
-                   definition_embedder=definition_embedder,
-                   definition_encoder=definition_encoder,
+                   name_embedder=name_embedder,
+                   name_encoder=name_encoder,
                    siamese_feedforward=siamese_feedforward,
                    decision_feedforward=decision_feedforward,
                    initializer=initializer,

@@ -1,28 +1,44 @@
 {
   "dataset_reader": {
     "type": "ontology_matcher",
-    "token_only_indexer": {
+    "name_token_indexer": {
       "tokens": {
         "type": "single_id",
         "lowercase_tokens": true
+      },
+      "token_characters": {
+        "type": "characters"
       }
     }
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/only_definition.enriched.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/only_definition.enriched.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/ontoemma.enriched.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/ontoemma.enriched.dev",
   "model": {
     "type": "ontoemmaNN",
-    "definition_embedder": {
+    "name_embedder": {
       "tokens": {
         "type": "embedding",
         "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights300.txt.gz",
         "embedding_dim": 300,
         "trainable": false
+      },
+      "token_characters": {
+        "type": "character_encoding",
+        "embedding": {
+          "embedding_dim": 100
+        },
+        "encoder": {
+          "type": "cnn",
+          "embedding_dim": 100,
+          "num_filters": 50,
+          "ngram_filter_sizes": [4, 5]
+        },
+        "dropout": 0.2
       }
     },
-    "definition_encoder": {
+    "name_encoder": {
       "type": "lstm",
-      "input_size": 300,
+      "input_size": 400,
       "hidden_size": 100,
       "num_layers": 2,
       "dropout": 0.2,
@@ -50,8 +66,8 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                    ["s_ent_def", "num_tokens"],
-                    ["t_ent_def", "num_tokens"]
+                    ["s_ent_name", "num_tokens"],
+                    ["t_ent_name", "num_tokens"]
     ],
     "batch_size": 64
   },
