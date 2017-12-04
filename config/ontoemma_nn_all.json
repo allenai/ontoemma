@@ -66,10 +66,10 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                    ["s_ent_name", "num_tokens"],
-                    ["t_ent_name", "num_tokens"]
+                    ["s_ent_alias", "list_num_tokens"],
+                    ["t_ent_alias", "list_num_tokens"]
     ],
-    "batch_size": 64
+    "batch_size": 32
   },
   "trainer": {
     "optimizer": "adam",

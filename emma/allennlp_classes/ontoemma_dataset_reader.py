@@ -1,5 +1,6 @@
 from typing import Dict, List
 import logging
+import random
 
 from overrides import overrides
 import json
@@ -85,16 +86,30 @@ class OntologyMatchingDatasetReader(DatasetReader):
                          label: str = None) -> Instance:
         # pylint: disable=arguments-differ
 
+        # sample n from list l, keeping only entries with len less than max_len
+        # if n is greater than the length of l, just return l
+        def sample_n(l, n, max_len):
+            l = [i for i in l if len(i) <= max_len]
+            if not l:
+                return ['00000']
+            if len(l) <= n:
+                return l
+            return random.sample(l, n)
+
         fields: Dict[str, Field] = {}
 
-        # add entity definition fields
-        fields['s_ent_name'] = TextField(
-            self._tokenizer.tokenize(s_ent['canonical_name']), self._name_token_indexer
-        ) if s_ent['canonical_name'] else self._empty_token_text_field
-        fields['t_ent_name'] = TextField(
-            self._tokenizer.tokenize(t_ent['canonical_name']), self._name_token_indexer
-        ) if t_ent['canonical_name'] else self._empty_token_text_field
+        s_aliases = sample_n(s_ent['aliases'], 16, 128)
+        t_aliases = sample_n(t_ent['aliases'], 16, 128)
 
+        # add entity alias fields
+        fields['s_ent_aliases'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexer)
+             for a in s_aliases]
+        )
+        fields['t_ent_aliases'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexer)
+             for a in t_aliases]
+        )
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
 

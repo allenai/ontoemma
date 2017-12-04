@@ -36,6 +36,33 @@ class OntoEmmaNN(Model):
 
         initializer(self)
 
+    @staticmethod
+    def _get_max_sim(s_stack, t_stack):
+        """
+        Get max similarity of each pair of corresponding entries from two ListFields
+        :param s_stack:
+        :param t_stack:
+        :return: max similarities, best field in s (max sim), best field in t (max sim)
+        """
+        max_vals = []
+        best_s = []
+        best_t = []
+
+        for s_entry, t_entry in zip(s_stack, t_stack):
+            s_maxvals, sidx = torch.max(s_entry.mm(t_entry.t()), 0)
+            if s_maxvals.dim() == 1:
+                s_max = torch.max(s_maxvals)
+                tidx = 0
+            else:
+                s_max, tidx = torch.max(s_maxvals, 1)
+            sidx = sidx.squeeze()[tidx]
+            max_vals.append(s_max)
+            best_s.append(s_entry[sidx].squeeze())
+            best_t.append(t_entry[tidx].squeeze())
+
+        return torch.stack(max_vals, 0).squeeze(-1), \
+               torch.stack(best_s, 0), torch.stack(best_t, 0)
+
     @overrides
     def forward(self,  # type: ignore
                 s_ent_name: Dict[str, torch.LongTensor],
@@ -47,18 +74,23 @@ class OntoEmmaNN(Model):
         all through a feedforward network, aggregate the outputs and run through
         a decision layer.
         """
-        # embed and encode all canonical names
-        embedded_s_ent_name = self.name_embedder(s_ent_name)
-        s_ent_name_mask = get_text_field_mask(s_ent_name)
-        encoded_s_ent_name = self.name_encoder(embedded_s_ent_name, s_ent_name_mask)
+        # embed and encode all aliases
+        embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_aliases)
+        s_ent_aliases_mask = get_text_field_mask(s_ent_aliases)
+        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
-        embedded_t_ent_name = self.name_embedder(t_ent_name)
-        t_ent_name_mask = get_text_field_mask(t_ent_name)
-        encoded_t_ent_name = self.name_encoder(embedded_t_ent_name, t_ent_name_mask)
+        embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_aliases)
+        t_ent_aliases_mask = get_text_field_mask(t_ent_aliases)
+        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+
+        # average across non-zero entries
+        best_alias_similarity, best_s_ent_alias, best_t_ent_alias = self._get_max_sim(
+            encoded_s_ent_aliases, encoded_t_ent_aliases
+        )
 
         # run both entity representations through feed forward network
-        s_ent_output = self.siamese_feedforward(encoded_s_ent_name)
-        t_ent_output = self.siamese_feedforward(encoded_t_ent_name)
+        s_ent_output = self.siamese_feedforward(best_s_ent_alias)
+        t_ent_output = self.siamese_feedforward(best_t_ent_alias)
 
         # concatenate outputs
         aggregate_input = torch.cat([
@@ -75,8 +107,8 @@ class OntoEmmaNN(Model):
         output_dict = dict()
         output_dict["score"] = sigmoid_output
         output_dict["predicted_label"] = predicted_label
-        output_dict["s_name_encoding"] = s_ent_output
-        output_dict["t_name_encoding"] = t_ent_output
+        output_dict["s_alias_encoding"] = s_ent_output
+        output_dict["t_alias_encoding"] = t_ent_output
 
         if label is not None:
             # compute loss and accuracy
