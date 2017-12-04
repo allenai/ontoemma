@@ -80,11 +80,11 @@ class OntoEmmaNN(Model):
         # embed and encode all aliases
         embedded_s_ent_aliases = self.distributed_name_embedder(s_ent_alias)
         s_ent_aliases_mask = get_text_field_mask(s_ent_alias)
-        encoded_s_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
+        encoded_s_ent_aliases = TimeDistributed(self.name_encoder)(embedded_s_ent_aliases, s_ent_aliases_mask)
 
         embedded_t_ent_aliases = self.distributed_name_embedder(t_ent_alias)
         t_ent_aliases_mask = get_text_field_mask(t_ent_alias)
-        encoded_t_ent_aliases = TimeDistributed(self.name_rnn_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
+        encoded_t_ent_aliases = TimeDistributed(self.name_encoder)(embedded_t_ent_aliases, t_ent_aliases_mask)
 
         # average across non-zero entries
         best_alias_similarity, best_s_ent_alias, best_t_ent_alias = self._get_max_sim(
