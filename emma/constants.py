@@ -9,13 +9,14 @@ IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
 
 # Score threshold for positive alignment
 MIN_SCORE_THRESHOLD = 0.10
-MAX_SCORE_THRESHOLD = 0.95
+MAX_SCORE_THRESHOLD = 0.10
 
 # Minimum size for training data
 MIN_TRAINING_SET_SIZE = 10
 
 # K number of top candidates to keep from candidate selection module
 KEEP_TOP_K_CANDIDATES = 50
+ASSIGN_TOP_K_CANDIDATES = 10
 
 # N-gram size for character n-grams
 NGRAM_SIZE = 5

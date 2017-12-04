@@ -8,21 +8,21 @@
       }
     }
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
+  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/only_definition.enriched.train",
+  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/nonequiv/only_definition.enriched.dev",
   "model": {
     "type": "ontoemmaNN",
     "definition_embedder": {
       "tokens": {
         "type": "embedding",
-        "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-        "embedding_dim": 100,
+        "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights300.txt.gz",
+        "embedding_dim": 300,
         "trainable": false
       }
     },
     "definition_encoder": {
       "type": "lstm",
-      "input_size": 100,
+      "input_size": 300,
       "hidden_size": 100,
       "num_layers": 2,
       "dropout": 0.2,
@@ -53,7 +53,7 @@
                     ["s_ent_def", "num_tokens"],
                     ["t_ent_def", "num_tokens"]
     ],
-    "batch_size": 32
+    "batch_size": 64
   },
   "trainer": {
     "optimizer": "adam",

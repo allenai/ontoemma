@@ -381,6 +381,14 @@ class KnowledgeBase(object):
             for ind in self.canonical_name_to_entity_index[canonical_name]
         ]
 
+    def get_entity_index(self, ent_id):
+        """
+        get index in entity list
+        :param ent:
+        :return:
+        """
+        return self.entities.index(self.get_entity_by_research_entity_id(ent_id))
+
     def get_relation_by_research_entity_ids_and_type(
         self, research_entity_ids, relation_type
     ):

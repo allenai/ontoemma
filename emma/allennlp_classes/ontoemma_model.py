@@ -75,6 +75,8 @@ class OntoEmmaNN(Model):
         output_dict = dict()
         output_dict["score"] = sigmoid_output
         output_dict["predicted_label"] = predicted_label
+        output_dict["s_def_encoding"] = s_ent_output
+        output_dict["t_ent_encoding"] = t_ent_output
 
         if label is not None:
             # compute loss and accuracy

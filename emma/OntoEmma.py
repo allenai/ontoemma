@@ -15,8 +15,6 @@ from lxml import etree
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from scipy.sparse import lil_matrix
-
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.OntoEmmaRFModel import OntoEmmaRFModel
 from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
@@ -24,6 +22,7 @@ from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.SparseFeatureGenerator import SparseFeatureGenerator
 from emma.RuleBasedAligner import RuleBasedAligner
+from emma.utils.modified_hungarian import ModifiedHungarian
 import emma.utils.string_utils as string_utils
 from emma.paths import StandardFilePath
 import emma.constants as constants
@@ -622,20 +621,55 @@ class OntoEmma:
         :param t_kb:
         :return:
         """
-        # keep all alignments about minimum score threshold
-        temp_alignments = defaultdict(list)
+        s_len = len(s_kb.entities)
+        t_len = len(t_kb.entities)
+
+        # create and populate graph adjacency matrix
+        cost_mat = np.ones((s_len, t_len))
+        print("Initial cost adjacency matrix size")
+        print(cost_mat.shape)
+
         for (s_ent_id, t_ent_id), score in scores.items():
-            if score >= constants.MIN_SCORE_THRESHOLD:
-                temp_alignments[s_ent_id].append((t_ent_id, score))
+            s_ind = s_kb.get_entity_index(s_ent_id)
+            t_ind = t_kb.get_entity_index(t_ent_id)
+            cost_mat[s_ind][t_ind] = 1.0 - score
 
-        # select best match for each source entity
+        # TODO: try reducing the mat by getting rid of the perfect matches
+        print("Computing best alignment...")
+        hmod = ModifiedHungarian(cost_mat)
+        indices = hmod.compute()
+        print("Length of assignment: %i" % len(indices))
+
+        total = 0.0
         alignment = []
+        for row, column in indices:
+            score = 1.0 - cost_mat[row][column]
+            if score >= constants.MAX_SCORE_THRESHOLD:
+                print('(%d, %d) -> %.2f' % (row, column, score))
+                total += score
+                alignment.append((s_kb.entities[row].research_entity_id,
+                                  t_kb.entities[column].research_entity_id,
+                                  score))
 
-        for s_ent_id, matches in temp_alignments.items():
-            if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+        print('total profit=%.2f' % total)
+
+        # # keep all alignments about minimum score threshold
+        # temp_alignments = defaultdict(list)
+        # for (s_ent_id, t_ent_id), score in scores.items():
+        #     if score >= constants.MIN_SCORE_THRESHOLD:
+        #         temp_alignments[s_ent_id].append((t_ent_id, score))
+        #
+        # # select best match for each source entity
+        # alignment = []
+        #
+        # for s_ent_id, matches in temp_alignments.items():
+        #     if len(matches) > 0:
+        #         # m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+        #         # if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
+        #         #     alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+        #         for m in matches:
+        #             if m[1] >= constants.MAX_SCORE_THRESHOLD:
+        #                 alignment.append((s_ent_id, m[0], m[1]))
 
         return alignment
 
@@ -678,7 +712,7 @@ class OntoEmma:
             updated_local_scores = copy(global_scores)
 
         # maximum bipartite matching
-        max_flow, global_matches = self._compute_best_alignment(local_scores, s_kb, t_kb)
+        global_matches = self._compute_best_alignment(updated_local_scores, s_kb, t_kb)
 
         sys.stdout.write('Global matches: %i\n' % len(global_matches))
         return global_matches
@@ -720,8 +754,7 @@ class OntoEmma:
                     features = [feat_gen.calculate_features(self._form_json_entity(s_ent, s_kb),
                                                             self._form_json_entity(t_ent, t_kb))]
                     score = model.predict_entity_pair(features)
-                    if score[0][1] >= constants.MIN_SCORE_THRESHOLD:
-                        local_scores[(s_ent_id, t_ent_id)] = score[0][1]
+                    local_scores[(s_ent_id, t_ent_id)] = score[0][1]
 
         sys.stdout.write("Propagating global scores...\n")
         global_matches = self._compute_global_similarities(local_scores, s_kb, t_kb)
@@ -801,29 +834,32 @@ class OntoEmma:
                     'target_ent': self._form_json_entity(t_ent, target_kb),
                     'label': 0
                 }
+
                 batch_json_data.append(json_data)
 
                 if len(batch_json_data) == batch_size:
                     results = predictor.predict_batch_json(batch_json_data, cuda_device)
 
                     for ent_data, output in zip(batch_json_data, results):
-                        if output['score'][0] >= constants.MIN_SCORE_THRESHOLD:
-                            local_scores[
-                                (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
-                            ] = output['score'][0]
+                        local_scores[
+                            (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
+                        ] = output['score'][0]
 
                     batch_json_data = []
 
         if batch_json_data:
             results = predictor.predict_batch_json(batch_json_data, cuda_device)
             for ent_data, output in zip(batch_json_data, results):
-                if output['score'][0] >= constants.MIN_SCORE_THRESHOLD:
-                    local_scores[
-                        (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
-                    ] = output['score'][0]
+                local_scores[
+                    (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
+                ] = output['score'][0]
 
         sys.stdout.write("Computing global similarities...\n")
-        global_matches = self._compute_global_similarities(local_scores)
+        # global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
+        global_matches = []
+        for k, v in local_scores.items():
+            if v >= constants.MAX_SCORE_THRESHOLD:
+                global_matches.append((k[0], k[1], v))
 
         return alignment + global_matches
 
