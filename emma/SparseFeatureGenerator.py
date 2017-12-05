@@ -112,6 +112,7 @@ class SparseFeatureGenerator:
         dict_entry['wiki_ent_tokens'] = self._tokenize_list(ent['wiki_entities'])
         dict_entry['mesh_syn_tokens'] = self._tokenize_list(ent['mesh_synonyms'])
         dict_entry['dbpedia_syn_tokens'] = self._tokenize_list(ent['dbpedia_synonyms'])
+        dict_entry['parse_root'] = self._dependency_parse(ent['canonical_name'])
         return dict_entry
 
     def _get_dict_entry(self, ent):
@@ -184,6 +185,9 @@ class SparseFeatureGenerator:
         all_synonym_jaccard = self._jaccard(s_all, t_all)
         max_all_synonym_jaccard = self._max_jaccard(s_all_tokens, t_all_tokens)
 
+        has_same_root_word = (s_info['parse_root'][0] == t_info['parse_root'][0])
+        root_word_jaccard = self._jaccard(s_info['parse_root'][1], t_info['parse_root'][1])
+
         # create feature dictionary
         features = dict()
 
@@ -222,6 +226,9 @@ class SparseFeatureGenerator:
         features['has_overlapping_synonym'] = has_overlapping_synonym
         features['all_synonym_jaccard'] = all_synonym_jaccard
         features['max_all_synonym_jaccard'] = max_all_synonym_jaccard
+
+        features['has_same_root_word'] = has_same_root_word
+        features['root_word_jaccard'] = root_word_jaccard
 
         return features
 
