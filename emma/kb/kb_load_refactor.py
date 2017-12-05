@@ -6,6 +6,7 @@ import re
 import rdflib
 from emma.utils import file_util
 from emma.kb.kb_utils_refactor import KBEntity, KBRelation, KnowledgeBase
+import emma.constants as constants
 
 
 # class for loading knowledgebase resources
@@ -241,6 +242,29 @@ class KBLoader(object):
             # add entity to kb
             kb.add_entity(entity)
 
+        # add symmetric relationships if missing
+        for ent in kb.entities:
+            rel_inds = ent.relation_ids
+            for r_ind in rel_inds:
+                relation = kb.relations[r_ind]
+                (sub_ent_id, obj_ent_id) = relation.entity_ids
+                rel_type = relation.relation_type
+                if rel_type in constants.SYMMETRIC_RELATIONS:
+                    symm_rel = constants.SYMMETRIC_RELATIONS[rel_type]
+                    if kb.get_relation_by_research_entity_ids_and_type((obj_ent_id, sub_ent_id),
+                                                                       symm_rel) is not None:
+                        relation_to_add = KBRelation(
+                            relation_type=symm_rel,
+                            entity_ids=[
+                                obj_ent_id,
+                                sub_ent_id
+                            ],
+                            symmetric=True
+                        )
+                        kb.add_relation(relation_to_add)
+                        rel_index = len(kb.relations) - 1
+                        ent.relation_ids.append(rel_index)
+
         return kb
 
     @staticmethod
@@ -302,6 +326,26 @@ class KBLoader(object):
                 if r_id in descriptions:
                     return descriptions[r_id][0]
             return None
+
+        # get the property type from the property id
+        def _get_prop_type(p):
+            delimiter = '#'
+            if '#' not in p and ';' in p:
+                delimiter = ';'
+            prop_id = p.split(delimiter)[-1].lower()
+            if prop_id in constants.UMLS_SYNONYM_REL_LABELS:
+                return 'SYN'
+            if prop_id in constants.UMLS_PARENT_REL_LABELS:
+                return 'PAR'
+            if prop_id in constants.UMLS_CHILD_REL_LABELS:
+                return 'CHD'
+            if prop_id in constants.UMLS_SIBLING_REL_LABELS:
+                return 'SIB'
+            if 'part_of' in prop_id or 'part of' in prop_id:
+                return 'PAR'
+            if 'has_part' or 'has part' in prop_id:
+                return 'CHD'
+            return prop_id
 
         assert kb_filename.endswith('.owl') or kb_filename.endswith('.rdf')
 
@@ -425,12 +469,12 @@ class KBLoader(object):
                                 ) + ' '
                     entity.definition = entity.definition.strip()
 
-                    # get subclass relations
+                    # get subclass relations and other relations
                     for sc_rel in cl.findall('rdfs:subClassOf', ns):
                         target_research_entity_id = sc_rel.get('{' + ns['rdf'] + '}resource', ns)
                         if isinstance(target_research_entity_id, str):
                             relation = KBRelation(
-                                relation_type='subClassOf',
+                                relation_type='subClassOf',  # has parent
                                 entity_ids=[
                                     entity.research_entity_id,
                                     target_research_entity_id
@@ -438,6 +482,21 @@ class KBLoader(object):
                                 symmetric=False
                             )
                             relations.append(relation)
+                        elif 'owl' in ns:
+                            rest = sc_rel.find('owl:Restriction', ns)
+                            prop = rest.find('owl:onProperty', ns).get('{' + ns['rdf'] + '}resource', ns)
+                            target_research_entity_id = rest.find('owl:someValuesFrom', ns).get('{' + ns['rdf'] + '}resource', ns)
+                            if prop and target_research_entity_id:
+                                prop_type = _get_prop_type(prop)
+                                relation = KBRelation(
+                                    relation_type=prop_type,
+                                    entity_ids=[
+                                        entity.research_entity_id,
+                                        target_research_entity_id
+                                    ]
+                                )
+                                relations.append(relation)
+
                 except AttributeError:
                     pass
 
@@ -449,6 +508,33 @@ class KBLoader(object):
 
                 # add entity to kb
                 kb.add_entity(entity)
+
+        print("Number of entities: %i" % len(kb.entities))
+        print("Number of relations: %i" % len(kb.relations))
+
+        # add symmetric relationships if missing
+        for ent in kb.entities:
+            rel_inds = ent.relation_ids
+            for r_ind in rel_inds:
+                relation = kb.relations[r_ind]
+                (sub_ent_id, obj_ent_id) = relation.entity_ids
+                rel_type = relation.relation_type
+                if rel_type in constants.SYMMETRIC_RELATIONS:
+                    symm_rel = constants.SYMMETRIC_RELATIONS[rel_type]
+                    if kb.get_relation_by_research_entity_ids_and_type((obj_ent_id, sub_ent_id), symm_rel) is not None:
+                        relation_to_add = KBRelation(
+                            relation_type=symm_rel,
+                            entity_ids=[
+                                obj_ent_id,
+                                sub_ent_id
+                            ],
+                            symmetric=True
+                        )
+                        kb.add_relation(relation_to_add)
+                        rel_index = len(kb.relations) - 1
+                        ent.relation_ids.append(rel_index)
+
+        print("After adding symmetric relations: %i" % len(kb.relations))
 
         return kb
 

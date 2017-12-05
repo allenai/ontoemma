@@ -41,9 +41,15 @@ TEST_PART = 0.2
 
 # relation labels from UMLS
 UMLS_SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
-UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 'part_of']
-UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
+UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'is a', 'part of', 'subclassof', 'is_a', 'part_of']
+UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'has part', 'subclass', 'has_part', 'component']
 UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
+
+# symmetric relations
+SYMMETRIC_RELATIONS = {'PAR': 'CHD',
+                       'CHD': 'PAR',
+                       'RN': 'RB',
+                       'RB': 'RN'}
 
 # number of steps for generating regional graph
 NUM_STEPS_FOR_KB_REGION = 5
