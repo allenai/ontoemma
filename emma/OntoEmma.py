@@ -671,22 +671,22 @@ class OntoEmma:
 
         for s_ent_id, matches in temp_alignments_s.items():
             if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
-                # for m in matches:
-                #     if m[1] >= constants.MAX_SCORE_THRESHOLD:
-                #         alignment.append((s_ent_id, m[0], m[1]))
+                # m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                # if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD:
+                #     alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+                for m in matches:
+                    if m[1] >= constants.MAX_SCORE_THRESHOLD:
+                        alignment.append((s_ent_id, m[0], m[1]))
 
-        for t_ent_id, matches in temp_alignments_t.items():
-            if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD and \
-                    (m_sort[0][0], t_ent_id, m_sort[0][1]) not in alignment:
-                    alignment.append((m_sort[0][0], t_ent_id, m_sort[0][1]))
-                # for m in matches:
-                #     if m[1] >= constants.MAX_SCORE_THRESHOLD:
-                #         alignment.append((m[0], t_ent_id, m[1]))
+        # for t_ent_id, matches in temp_alignments_t.items():
+        #     if len(matches) > 0:
+        #         m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+        #         if m_sort[0][1] >= constants.MAX_SCORE_THRESHOLD and \
+        #             (m_sort[0][0], t_ent_id, m_sort[0][1]) not in alignment:
+        #             alignment.append((m_sort[0][0], t_ent_id, m_sort[0][1]))
+        #         # for m in matches:
+        #         #     if m[1] >= constants.MAX_SCORE_THRESHOLD:
+        #         #         alignment.append((m[0], t_ent_id, m[1]))
 
         return alignment
 
@@ -824,7 +824,7 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb, candidate_selector)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         # Load similarity predictor
