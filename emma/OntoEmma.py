@@ -877,6 +877,10 @@ class OntoEmma:
                     (ent_data['source_ent']['research_entity_id'], ent_data['target_ent']['research_entity_id'])
                 ] = output['score'][0]
 
+        model_dir, model_file = os.path.split(model_path)
+        local_score_file = os.path.join(model_dir, 'local_score_output.pickle')
+        pickle.dump(local_scores, open(local_score_file, 'wb'))
+
         sys.stdout.write("Computing global similarities...\n")
         # global_matches = self._compute_global_similarities(local_scores, source_kb, target_kb)
         global_matches = []
