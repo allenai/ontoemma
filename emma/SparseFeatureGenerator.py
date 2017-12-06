@@ -128,9 +128,12 @@ class SparseFeatureGenerator:
         :return:
         """
 
-        # FOR TRAINING
-        # s_ent['mesh_synonyms'] = s_ent['mesh_synonynms']
-        # t_ent['mesh_synonyms'] = t_ent['mesh_synonynms']
+        # Typo in training data
+        if 'mesh_synonynms' in s_ent:
+            s_ent['mesh_synonyms'] = s_ent['mesh_synonynms']
+
+        if 'mesh_synonynms' in t_ent:
+            t_ent['mesh_synonyms'] = t_ent['mesh_synonynms']
 
         s_info = self._get_dict_entry(s_ent)
         t_info = self._get_dict_entry(t_ent)
