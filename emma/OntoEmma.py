@@ -824,9 +824,6 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb, candidate_selector)
-        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
-
         # Load similarity predictor
         if cuda_device > 0:
             with device(cuda_device):
@@ -835,6 +832,10 @@ class OntoEmma:
             archive = load_archive(model_path, cuda_device=cuda_device)
 
         predictor = Predictor.from_archive(archive, 'ontoemma-predictor')
+
+        # get string equivalence alignments
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb, candidate_selector)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         sys.stdout.write("Making predictions...\n")
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
