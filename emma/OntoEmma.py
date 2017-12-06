@@ -251,15 +251,18 @@ class OntoEmma:
             ent.canonical_name = string_utils.normalize_string(ent.canonical_name)
             ent.aliases = [string_utils.normalize_string(a) for a in ent.aliases]
             ent.definition = string_utils.normalize_string(ent.definition)
+
             ent.additional_details['wiki_entities'] = [
                 string_utils.normalize_string(i) for i in ent.additional_details['wiki_entities']
-            ]
+            ] if 'wiki_entities' in ent.additional_details else []
+
             ent.additional_details['mesh_synonyms'] = [
                 string_utils.normalize_string(i) for i in ent.additional_details['mesh_synonynms']
-            ]
+            ] if 'mesh_synonynms' in ent.additional_details else []
+
             ent.additional_details['dbpedia_synonyms'] = [
                 string_utils.normalize_string(i) for i in ent.additional_details['dbpedia_synonyms']
-            ]
+            ] if 'dbpedia_synonyms' in ent.additional_details else []
 
             all_rels = [kb.relations[r_id] for r_id in ent.relation_ids]
             par_ents = [
@@ -580,11 +583,12 @@ class OntoEmma:
         return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
 
     @staticmethod
-    def _align_string_equiv(s_kb, t_kb):
+    def _align_string_equiv(s_kb, t_kb, cand_sel):
         """
         Align entities in two KBs using string equivalence
         :param s_kb:
         :param t_kb:
+        :param cand_sel:
         :return:
         """
         alignment = []
@@ -601,11 +605,13 @@ class OntoEmma:
                 [a.lower().replace('_', ' ').replace('-', '') for a in t_ent.aliases]
             )
 
-        for s_id, t_id in itertools.product(s_aliases, t_aliases):
-            if len(s_aliases[s_id].intersection(t_aliases[t_id])) > 0:
-                alignment.append((s_id, t_id, 1.0))
-                s_matched.add(s_id)
-                t_matched.add(t_id)
+        for s_ent in tqdm.tqdm(s_kb.entities, total=len(s_kb.entities)):
+            s_id = s_ent.research_entity_id
+            for t_id in cand_sel.select_candidates(s_id):
+                if len(s_aliases[s_id].intersection(t_aliases[t_id])) > 0:
+                    alignment.append((s_id, t_id, 1.0))
+                    s_matched.add(s_id)
+                    t_matched.add(t_id)
 
         s_remaining = set([e.research_entity_id for e in s_kb.entities]).difference(s_matched)
         t_remaining = set([e.research_entity_id for e in t_kb.entities]).difference(t_matched)
@@ -743,7 +749,7 @@ class OntoEmma:
         """
 
         sys.stdout.write("Finding string equivalences...\n")
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(s_kb, t_kb)
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(s_kb, t_kb, cand_sel)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         local_scores = dict()
