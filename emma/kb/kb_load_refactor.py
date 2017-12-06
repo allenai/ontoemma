@@ -242,28 +242,8 @@ class KBLoader(object):
             # add entity to kb
             kb.add_entity(entity)
 
-        # add symmetric relationships if missing
-        for ent in kb.entities:
-            rel_inds = ent.relation_ids
-            for r_ind in rel_inds:
-                relation = kb.relations[r_ind]
-                (sub_ent_id, obj_ent_id) = relation.entity_ids
-                rel_type = relation.relation_type
-                if rel_type in constants.SYMMETRIC_RELATIONS:
-                    symm_rel = constants.SYMMETRIC_RELATIONS[rel_type]
-                    if kb.get_relation_by_research_entity_ids_and_type((obj_ent_id, sub_ent_id),
-                                                                       symm_rel) is not None:
-                        relation_to_add = KBRelation(
-                            relation_type=symm_rel,
-                            entity_ids=[
-                                obj_ent_id,
-                                sub_ent_id
-                            ],
-                            symmetric=True
-                        )
-                        kb.add_relation(relation_to_add)
-                        rel_index = len(kb.relations) - 1
-                        ent.relation_ids.append(rel_index)
+        # add symmetric relations
+        kb.add_symmetric_relations()
 
         return kb
 
@@ -486,7 +466,7 @@ class KBLoader(object):
                             rest = sc_rel.find('owl:Restriction', ns)
                             prop = rest.find('owl:onProperty', ns).get('{' + ns['rdf'] + '}resource', ns)
                             target_research_entity_id = rest.find('owl:someValuesFrom', ns).get('{' + ns['rdf'] + '}resource', ns)
-                            if prop and target_research_entity_id:
+                            if prop and target_research_entity_id and type(target_research_entity_id) is str:
                                 prop_type = _get_prop_type(prop)
                                 relation = KBRelation(
                                     relation_type=prop_type,
@@ -512,27 +492,7 @@ class KBLoader(object):
         print("Number of entities: %i" % len(kb.entities))
         print("Number of relations: %i" % len(kb.relations))
 
-        # add symmetric relationships if missing
-        for ent in kb.entities:
-            rel_inds = ent.relation_ids
-            for r_ind in rel_inds:
-                relation = kb.relations[r_ind]
-                (sub_ent_id, obj_ent_id) = relation.entity_ids
-                rel_type = relation.relation_type
-                if rel_type in constants.SYMMETRIC_RELATIONS:
-                    symm_rel = constants.SYMMETRIC_RELATIONS[rel_type]
-                    if kb.get_relation_by_research_entity_ids_and_type((obj_ent_id, sub_ent_id), symm_rel) is not None:
-                        relation_to_add = KBRelation(
-                            relation_type=symm_rel,
-                            entity_ids=[
-                                obj_ent_id,
-                                sub_ent_id
-                            ],
-                            symmetric=True
-                        )
-                        kb.add_relation(relation_to_add)
-                        rel_index = len(kb.relations) - 1
-                        ent.relation_ids.append(rel_index)
+        kb.add_symmetric_relations()
 
         print("After adding symmetric relations: %i" % len(kb.relations))
 

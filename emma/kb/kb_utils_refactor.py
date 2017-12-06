@@ -12,6 +12,7 @@ from lxml import etree
 from emma.utils import file_util
 from emma.utils.string_utils import canonicalize
 from emma.utils.common import global_tokenizer
+import emma.constants as constants
 
 
 # a lightweight class to represent an entity with a unified schema.
@@ -255,8 +256,7 @@ class KnowledgeBase(object):
         if self.validate_relation(new_relation):
             self.relations.append(new_relation)
             rel_index = len(self.relations) - 1
-            self.entity_ids_to_relation_index[tuple(new_relation.entity_ids)
-                                             ].add(rel_index)
+            self.entity_ids_to_relation_index[tuple(new_relation.entity_ids)].add(rel_index)
         else:
             raise ValueError('Relation failed validation: %s' % new_relation)
         return
@@ -345,6 +345,39 @@ class KnowledgeBase(object):
         raise NotImplementedError(
             'The merge relations method has not yet been implemented.'
         )
+
+    def add_symmetric_relations(self):
+        """
+        Add symmetric relations to KB if missing
+        :param kb:
+        :return:
+        """
+        self.generate_indices()
+
+        for ent in self.entities:
+            rel_inds = ent.relation_ids
+            for r_ind in rel_inds:
+                relation = self.relations[r_ind]
+                (sub_ent_id, obj_ent_id) = relation.entity_ids
+                rel_type = relation.relation_type
+                if rel_type in constants.SYMMETRIC_RELATIONS:
+                    symm_rel = constants.SYMMETRIC_RELATIONS[rel_type]
+                    if self.get_relation_by_research_entity_ids_and_type((obj_ent_id, sub_ent_id), symm_rel) is None:
+                        obj_ent = self.get_entity_by_research_entity_id(obj_ent_id)
+                        if obj_ent:
+                            relation_to_add = KBRelation(
+                                relation_type=symm_rel,
+                                entity_ids=[
+                                    obj_ent_id,
+                                    sub_ent_id
+                                ],
+                                symmetric=True
+                            )
+                            self.add_relation(relation_to_add)
+                            rel_index = len(self.relations) - 1
+                            self.entity_ids_to_relation_index[(obj_ent_id, sub_ent_id)].add(rel_index)
+                            obj_ent.relation_ids.append(rel_index)
+        return
 
     def get_entity_by_research_entity_id(self, research_entity_id):
         """
@@ -482,7 +515,10 @@ class KnowledgeBase(object):
 
             kb.relations = relations
 
-        kb.generate_indices()
+        print("Number of relations: %i" % len(kb.relations))
+        kb.add_symmetric_relations()
+        print("After adding symmetric relations: %i" % len(kb.relations))
+
         return kb
 
     @staticmethod
