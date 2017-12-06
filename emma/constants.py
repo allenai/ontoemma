@@ -9,7 +9,7 @@ IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
 
 # Score threshold for positive alignment
 MIN_SCORE_THRESHOLD = 0.10
-MAX_SCORE_THRESHOLD = 0.10
+MAX_SCORE_THRESHOLD = 0.85
 
 # Minimum size for training data
 MIN_TRAINING_SET_SIZE = 10
@@ -41,18 +41,22 @@ TEST_PART = 0.2
 
 # relation labels from UMLS
 UMLS_SYNONYM_REL_LABELS = ['RL', 'RQ', 'RU', 'SY']
-UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'is a', 'part of', 'subclassof', 'is_a', 'part_of']
-UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'has part', 'subclass', 'has_part', 'component']
+UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'is a', 'part of', 'subClassOf', 'is_a', 'part_of']
+UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'has part', 'subClass', 'has_part', 'component']
 UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
 
 # symmetric relations
 SYMMETRIC_RELATIONS = {'PAR': 'CHD',
                        'CHD': 'PAR',
                        'RN': 'RB',
-                       'RB': 'RN'}
+                       'RB': 'RN',
+                       'subClassOf': 'subClass',
+                       'subClass': 'subClassOf',
+                       'part_of': 'has_part',
+                       'has_part': 'part_of'}
 
 # number of steps for generating regional graph
-NUM_STEPS_FOR_KB_REGION = 5
+NUM_STEPS_FOR_KB_REGION = 2
 
 # global similarity iterations
 GLOBAL_SIMILARITY_ITERATIONS = 0
