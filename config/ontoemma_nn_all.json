@@ -67,7 +67,7 @@
       "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 400,
+      "input_dim": 600,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
@@ -75,10 +75,10 @@
     },
     "decision_feedforward": {
       "input_dim": 232,
-      "num_layers": 2,
-      "hidden_dims": [200, 1],
-      "activations": ["relu", "linear"],
-      "dropout": [0.2, 0.0]
+      "num_layers": 3,
+      "hidden_dims": [232, 100, 1],
+      "activations": ["relu", "relu", "linear"],
+      "dropout": [0.2, 0.2, 0.0]
     },
     "initializer": [
       [".*linear_layers.*weight", {"type": "xavier_normal"}],
@@ -88,8 +88,8 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                    ["s_ent_definition", "num_tokens"],
-                    ["t_ent_definition", "num_tokens"],
+                    ["s_ent_def", "num_tokens"],
+                    ["t_ent_def", "num_tokens"],
                     ["s_ent_alias", "list_num_tokens"],
                     ["t_ent_alias", "list_num_tokens"],
                     ["s_ent_name", "num_tokens"],

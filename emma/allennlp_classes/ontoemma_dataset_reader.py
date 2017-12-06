@@ -319,15 +319,15 @@ class OntologyMatchingDatasetReader(DatasetReader):
         fields: Dict[str, Field] = {}
 
         fields['engineered_features'] = ListField(
-            self._get_features(self._form_dict_entry(s_ent), self._form_dict_entry(t_ent))
+            self._get_features(s_ent, t_ent)
         )
 
         # add entity name fields
         fields['s_ent_name'] = TextField(
-            self._tokenizer.tokenize('00000 ' + self.s_ent['canonical_name']), self._name_token_indexer
+            self._tokenizer.tokenize('00000 ' + s_ent['canonical_name']), self._name_token_indexer
         )
         fields['t_ent_name'] = TextField(
-            self._tokenizer.tokenize('00000 ' + self.t_ent['canonical_name']), self._name_token_indexer
+            self._tokenizer.tokenize('00000 ' + t_ent['canonical_name']), self._name_token_indexer
         )
 
         s_aliases = sample_n(s_ent['aliases'], 16, 128)
@@ -345,10 +345,10 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         # add entity definition fields
         fields['s_ent_def'] = TextField(
-            self._tokenizer.tokenize(self.s_ent['definition']), self._token_only_indexer
+            self._tokenizer.tokenize(s_ent['definition']), self._token_only_indexer
         ) if len(s_ent['definition']) > 5 else self._empty_token_text_field
         fields['t_ent_def'] = TextField(
-            self._tokenizer.tokenize(self.t_ent['definition']), self._token_only_indexer
+            self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
         ) if len(t_ent['definition']) > 5 else self._empty_token_text_field
 
         # add boolean label (0 = no match, 1 = match)
