@@ -63,3 +63,9 @@ class StandardFilePath(object):
         return os.path.join(
             self.ontoemma_root_dir, self.ontoemma_output_root, self.ontoemma_missed_fname
         )
+
+    @property
+    def ontoemma_synonym_dir(self):
+        return os.path.join(
+            self.ontoemma_model_dir, 'other_data'
+        )
