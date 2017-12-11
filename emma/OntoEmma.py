@@ -17,7 +17,7 @@ from emma.OntoEmmaLRModel import OntoEmmaLRModel
 from emma.kb.kb_utils_refactor import KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
-from emma.FeatureGeneratorLR import FeatureGeneratorLR
+from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 from emma.paths import StandardFilePath
 import emma.constants as constants
 
@@ -215,14 +215,14 @@ class OntoEmma:
         sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
-        feat_gen_train = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
+        feat_gen_train = EngineeredFeatureGenerator([item for sublist in training_pairs for item in sublist])
         training_features = [
             feat_gen_train.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
             for s_ent, t_ent in training_pairs
         ]
 
         # generate features for development pairs
-        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
+        feat_gen_dev = EngineeredFeatureGenerator([item for sublist in dev_pairs for item in sublist])
         dev_features = [
             feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
             for s_ent, t_ent in dev_pairs
@@ -304,7 +304,7 @@ class OntoEmma:
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
-        feat_gen = FeatureGeneratorLR([item for sublist in eval_pairs for item in sublist])
+        feat_gen = EngineeredFeatureGenerator([item for sublist in eval_pairs for item in sublist])
         eval_features = [
             feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
             for s_ent, t_ent in eval_pairs
@@ -433,7 +433,7 @@ class OntoEmma:
 
         alignment = []
 
-        feature_generator = FeatureGeneratorLR(
+        feature_generator = EngineeredFeatureGenerator(
             [_form_json_entity(ent, source_kb) for ent in source_kb.entities] +
             [_form_json_entity(ent, target_kb) for ent in target_kb.entities]
         )
