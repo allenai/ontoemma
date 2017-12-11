@@ -9,7 +9,7 @@ import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 # class for generating sparse features between entities of two KBs
-class SparseFeatureGenerator:
+class EngineeredFeatureGenerator:
     def __init__(self, s_token_to_idf: dict = None, t_token_to_idf: dict = None):
         """
         Initializae feature generator; token to idf dicts are taken from the candidate selector

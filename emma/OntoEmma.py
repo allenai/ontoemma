@@ -20,7 +20,7 @@ from emma.OntoEmmaRFModel import OntoEmmaRFModel
 from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
-from emma.SparseFeatureGenerator import SparseFeatureGenerator
+from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 from emma.utils.modified_hungarian import ModifiedHungarian
 import emma.utils.string_utils as string_utils
 from emma.paths import StandardFilePath
@@ -312,7 +312,7 @@ class OntoEmma:
         sys.stdout.write('Training data size: %i\n' % len(training_labels))
 
         # generate features for training pairs
-        feat_gen_train = SparseFeatureGenerator()
+        feat_gen_train = EngineeredFeatureGenerator()
         training_features = []
         for s_ent, t_ent in tqdm.tqdm(training_pairs, total=len(training_pairs)):
             training_features.append(
@@ -322,7 +322,7 @@ class OntoEmma:
         sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for development pairs
-        feat_gen_dev = SparseFeatureGenerator()
+        feat_gen_dev = EngineeredFeatureGenerator()
         dev_features = []
         for s_ent, t_ent in tqdm.tqdm(dev_pairs, total=len(dev_pairs)):
             dev_features.append(
@@ -431,7 +431,7 @@ class OntoEmma:
         sys.stdout.write('Evaluation data size: %i\n' % len(eval_labels))
 
         # initialize feature generator
-        feat_gen = SparseFeatureGenerator()
+        feat_gen = EngineeredFeatureGenerator()
         eval_features = []
         for s_ent, t_ent in tqdm.tqdm(eval_pairs, total=len(eval_pairs)):
             eval_features.append(
@@ -756,7 +756,7 @@ class OntoEmma:
         for s_id, t_id, score in alignment:
             local_scores[(s_id, t_id)] = 1.0
 
-        feat_gen = SparseFeatureGenerator()
+        feat_gen = EngineeredFeatureGenerator()
 
         sys.stdout.write("Making predictions...\n")
 
