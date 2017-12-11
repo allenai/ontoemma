@@ -20,12 +20,7 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from emma.allennlp_classes.boolean_field import BooleanField
 from emma.allennlp_classes.float_field import FloatField
 
-import spacy
-from nltk.corpus import stopwords
-from nltk.tokenize import RegexpTokenizer
-from nltk.stem.snowball import SnowballStemmer
-from nltk.stem.wordnet import WordNetLemmatizer
-
+from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 import emma.utils.string_utils as string_utils
 
 
@@ -68,12 +63,7 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
 
-        self.STOP = set(stopwords.words('english'))
-        self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
-        self.stemmer = SnowballStemmer("english")
-        self.lemmatizer = WordNetLemmatizer()
-        self.nlp = spacy.load('en')
-        self.token_dict = dict()
+        self.feat_gen = EngineeredFeatureGenerator()
 
     @overrides
     def read(self, file_path):
@@ -99,96 +89,6 @@ class OntologyMatchingDatasetReader(DatasetReader):
                                      "Is the path correct?".format(file_path))
         return Dataset(instances)
 
-    def _dependency_parse(self, name):
-        """
-        compute dependency parse of name and return root word, and all chunk root words
-        :param name: name string
-        :return:
-        """
-        doc = self.nlp(name)
-        root_text = [(token.dep_, token.head.text) for token in doc]
-        root = [t for d, t in root_text if d == 'ROOT'][0]
-        root_words = set([t for d, t in root_text])
-        return root, root_words
-
-    def _tokenize(self, s):
-        return string_utils.tokenize_string(s, self.tokenizer, self.STOP)
-
-    def _tokenize_list(self, l):
-        return [self._tokenize(i) for i in l]
-
-    @staticmethod
-    def _order_sublists(l):
-        return [tuple(sorted(i)) for i in l]
-
-    @staticmethod
-    def _char_tokenize(s, ngram_size):
-        return string_utils.get_character_n_grams(s, ngram_size)
-
-    def _char_tokenize_list(self, l, ngram_size):
-        return [self._char_tokenize(i, ngram_size) for i in l]
-
-    def _stem_tokens(self, t):
-        return [self.stemmer.stem(i) for i in t]
-
-    def _lemmatize_tokens(self, t):
-        return [self.lemmatizer.lemmatize(i) for i in t]
-
-    def _stem_list(self, l):
-        return [self._stem_tokens(t) for t in l]
-
-    def _lemmatize_list(self, l):
-        return [self._lemmatize_tokens(t) for t in l]
-
-    @staticmethod
-    def _acronym(t):
-        return ''.join([i[0] for i in t])
-
-    def _acronym_list(self, l):
-        return [self._acronym(t) for t in l]
-
-    @staticmethod
-    def _jaccard(a, b):
-        return string_utils.get_jaccard_similarity(set(a), set(b))
-
-    def _max_jaccard(self, alist, blist):
-        max_jacc = 0.0
-        for a, b in itertools.product(alist, blist):
-            jacc = self._jaccard(a, b)
-            if jacc == 1.0:
-                return 1.0
-            if jacc > max_jacc:
-                max_jacc = jacc
-        return max_jacc
-
-    @staticmethod
-    def _overlaps(a, b):
-        return not set(a).isdisjoint(b)
-
-    def _form_dict_entry(self, ent):
-        dict_entry = dict()
-        dict_entry['name_tokens'] = self._tokenize(ent['canonical_name'])
-        dict_entry['stemmed_name_tokens'] = self._stem_tokens(dict_entry['name_tokens'])
-        dict_entry['lemmatized_name_tokens'] = self._lemmatize_tokens(dict_entry['name_tokens'])
-        dict_entry['name_char_4grams'] = self._char_tokenize(ent['canonical_name'], 4)
-        dict_entry['name_char_5grams'] = self._char_tokenize(ent['canonical_name'], 5)
-        dict_entry['alias_tokens'] = self._tokenize_list(ent['aliases'])
-        dict_entry['alias_char_4grams'] = self._char_tokenize_list(ent['aliases'], 4)
-        dict_entry['alias_char_5grams'] = self._char_tokenize_list(ent['aliases'], 5)
-        dict_entry['acronyms'] = self._acronym_list(dict_entry['alias_tokens'])
-        dict_entry['alias_token_set'] = self._order_sublists(dict_entry['alias_tokens'])
-        dict_entry['def_tokens'] = self._tokenize(ent['definition'])
-        dict_entry['wiki_ent_tokens'] = self._tokenize_list(ent['wiki_entities'])
-        dict_entry['mesh_syn_tokens'] = self._tokenize_list(ent['mesh_synonyms'])
-        dict_entry['dbpedia_syn_tokens'] = self._tokenize_list(ent['dbpedia_synonyms'])
-        dict_entry['parse_root'] = self._dependency_parse(ent['canonical_name'])
-        return dict_entry
-
-    def _get_dict_entry(self, ent):
-        if ent['research_entity_id'] not in self.token_dict:
-            self.token_dict[ent['research_entity_id']] = self._form_dict_entry(ent)
-        return self.token_dict[ent['research_entity_id']]
-
     def _get_features(self, s_ent: dict, t_ent: dict):
         """
         Calculate features between two entities s_ent and t_ent from source and target KBs respectively
@@ -196,109 +96,48 @@ class OntologyMatchingDatasetReader(DatasetReader):
         :param t_ent: entity from target KB
         :return:
         """
-
-        # FOR TRAINING
-        if 'mesh_synonynms' in s_ent:
-            s_ent['mesh_synonyms'] = s_ent['mesh_synonynms']
-
-        if 'mesh_synonynms' in t_ent:
-            t_ent['mesh_synonyms'] = t_ent['mesh_synonynms']
-
-        s_info = self._get_dict_entry(s_ent)
-        t_info = self._get_dict_entry(t_ent)
-
-        has_same_canonical_name = (s_ent['canonical_name'] == t_ent['canonical_name'])
-        has_same_canonical_name_tokens = (s_info['name_tokens'] == t_info['name_tokens'])
-        has_same_canonical_name_token_set = (set(s_info['name_tokens']) == set(t_info['name_tokens']))
-        has_same_stemmed_name_tokens = (s_info['stemmed_name_tokens'] == t_info['stemmed_name_tokens'])
-        has_same_stemmed_name_token_set = (set(s_info['stemmed_name_tokens']) == set(t_info['stemmed_name_tokens']))
-        has_same_lemmatized_name_tokens = (s_info['lemmatized_name_tokens'] == t_info['lemmatized_name_tokens'])
-        has_same_lemmatized_name_token_set = (set(s_info['lemmatized_name_tokens']) == set(t_info['lemmatized_name_tokens']))
-
-        name_char_4gram_jaccard = self._jaccard(s_info['name_char_4grams'], t_info['name_char_4grams'])
-        name_char_5gram_jaccard = self._jaccard(s_info['name_char_5grams'], t_info['name_char_5grams'])
-
-        has_alias_in_common = self._overlaps(s_ent['aliases'], t_ent['aliases'])
-        has_alias_tokens_in_common = self._overlaps(s_info['alias_tokens'], t_info['alias_tokens'])
-        has_alias_token_set_in_common = self._overlaps(s_info['alias_token_set'], t_info['alias_token_set'])
-
-        alias_token_jaccard = self._jaccard(s_info['alias_token_set'], t_info['alias_token_set'])
-        max_alias_token_jaccard = self._max_jaccard(s_info['alias_token_set'], t_info['alias_token_set'])
-        max_alias_4gram_jaccard = self._max_jaccard(s_info['alias_char_4grams'], t_info['alias_char_4grams'])
-        max_alias_5gram_jaccard = self._max_jaccard(s_info['alias_char_5grams'], t_info['alias_char_5grams'])
-
-        has_same_acronym = self._overlaps(s_info['acronyms'], t_info['acronyms']) or \
-                           self._overlaps(s_info['acronyms'], t_ent['aliases']) or \
-                           self._overlaps(s_ent['aliases'], t_info['acronyms'])
-
-        definition_token_jaccard = self._jaccard(s_info['def_tokens'], t_info['def_tokens'])
-
-        has_same_wiki_entity = self._overlaps(s_ent['wiki_entities'], t_ent['wiki_entities'])
-        wiki_entity_jaccard = self._jaccard(s_ent['wiki_entities'], t_ent['wiki_entities'])
-        max_wiki_entity_jaccard = self._max_jaccard(s_info['wiki_ent_tokens'], t_info['wiki_ent_tokens'])
-
-        has_same_mesh_synonym = self._overlaps(s_ent['mesh_synonyms'], t_ent['mesh_synonyms'])
-        mesh_synonym_jaccard = self._jaccard(s_ent['mesh_synonyms'], t_ent['mesh_synonyms'])
-        max_mesh_synonym_jaccard = self._max_jaccard(s_info['mesh_syn_tokens'], t_info['mesh_syn_tokens'])
-
-        has_same_dbpedia_synonym = self._overlaps(s_ent['dbpedia_synonyms'], t_ent['dbpedia_synonyms'])
-        dbpedia_synonym_jaccard = self._jaccard(s_ent['dbpedia_synonyms'], t_ent['dbpedia_synonyms'])
-        max_dbpedia_synonym_jaccard = self._max_jaccard(s_info['dbpedia_syn_tokens'], t_info['dbpedia_syn_tokens'])
-
-        s_all = s_ent['aliases'] + s_ent['wiki_entities'] + s_ent['mesh_synonyms'] + s_ent['dbpedia_synonyms']
-        t_all = t_ent['aliases'] + t_ent['wiki_entities'] + t_ent['mesh_synonyms'] + t_ent['dbpedia_synonyms']
-
-        s_all_tokens = s_info['alias_tokens'] + s_info['wiki_ent_tokens'] + \
-                       s_info['mesh_syn_tokens'] + s_info['dbpedia_syn_tokens']
-        t_all_tokens = t_info['alias_tokens'] + t_info['wiki_ent_tokens'] + \
-                       t_info['mesh_syn_tokens'] + t_info['dbpedia_syn_tokens']
-
-        has_overlapping_synonym = self._overlaps(s_all, t_all)
-        all_synonym_jaccard = self._jaccard(s_all, t_all)
-        max_all_synonym_jaccard = self._max_jaccard(s_all_tokens, t_all_tokens)
-
-        has_same_root_word = (s_info['parse_root'][0] == t_info['parse_root'][0])
-        root_word_jaccard = self._jaccard(s_info['parse_root'][1], t_info['parse_root'][1])
+        # get feature dictionary from feature generator
+        feat_dict = self.feat_gen.calculate_features(s_ent, t_ent)
 
         # form feature vector
-        feature_vec = [FloatField(float(has_same_canonical_name)),
-                       FloatField(float(has_same_canonical_name_tokens)),
-                       FloatField(float(has_same_canonical_name_token_set)),
-                       FloatField(float(has_same_stemmed_name_tokens)),
-                       FloatField(float(has_same_stemmed_name_token_set)),
+        feature_vec = [FloatField(float(feat_dict['has_same_canonical_name'])),
+                       FloatField(float(feat_dict['has_same_canonical_name_tokens'])),
+                       FloatField(float(feat_dict['has_same_canonical_name_token_set'])),
+                       FloatField(float(feat_dict['has_same_stemmed_name_tokens'])),
+                       FloatField(float(feat_dict['has_same_stemmed_name_token_set'])),
 
-                       FloatField(float(has_same_lemmatized_name_tokens)),
-                       FloatField(float(has_same_lemmatized_name_token_set)),
-                       FloatField(name_char_4gram_jaccard),
-                       FloatField(name_char_5gram_jaccard),
-                       FloatField(float(has_alias_in_common)),
+                       FloatField(float(feat_dict['has_same_lemmatized_name_tokens'])),
+                       FloatField(float(feat_dict['has_same_lemmatized_name_token_set'])),
+                       FloatField(feat_dict['name_char_4gram_jaccard']),
+                       FloatField(feat_dict['name_char_5gram_jaccard']),
+                       FloatField(float(feat_dict['has_alias_in_common'])),
 
-                       FloatField(float(has_alias_tokens_in_common)),
-                       FloatField(float(has_alias_token_set_in_common)),
-                       FloatField(alias_token_jaccard),
-                       FloatField(max_alias_token_jaccard),
-                       FloatField(max_alias_4gram_jaccard),
+                       FloatField(float(feat_dict['has_alias_tokens_in_common'])),
+                       FloatField(float(feat_dict['has_alias_token_set_in_common'])),
+                       FloatField(feat_dict['alias_token_jaccard']),
+                       FloatField(feat_dict['max_alias_token_jaccard']),
+                       FloatField(feat_dict['max_alias_4gram_jaccard']),
 
-                       FloatField(max_alias_5gram_jaccard),
-                       FloatField(float(has_same_acronym)),
-                       FloatField(definition_token_jaccard),
-                       FloatField(float(has_same_wiki_entity)),
-                       FloatField(wiki_entity_jaccard),
+                       FloatField(feat_dict['max_alias_5gram_jaccard']),
+                       FloatField(float(feat_dict['has_same_acronym'])),
+                       FloatField(feat_dict['definition_token_jaccard']),
+                       FloatField(float(feat_dict['has_same_wiki_entity'])),
+                       FloatField(feat_dict['wiki_entity_jaccard']),
 
-                       FloatField(max_wiki_entity_jaccard),
-                       FloatField(float(has_same_mesh_synonym)),
-                       FloatField(mesh_synonym_jaccard),
-                       FloatField(max_mesh_synonym_jaccard),
-                       FloatField(float(has_same_dbpedia_synonym)),
+                       FloatField(feat_dict['max_wiki_entity_jaccard']),
+                       FloatField(float(feat_dict['has_same_mesh_synonym'])),
+                       FloatField(feat_dict['mesh_synonym_jaccard']),
+                       FloatField(feat_dict['max_mesh_synonym_jaccard']),
+                       FloatField(float(feat_dict['has_same_dbpedia_synonym'])),
 
-                       FloatField(dbpedia_synonym_jaccard),
-                       FloatField(max_dbpedia_synonym_jaccard),
-                       FloatField(float(has_overlapping_synonym)),
-                       FloatField(all_synonym_jaccard),
-                       FloatField(max_all_synonym_jaccard),
+                       FloatField(feat_dict['dbpedia_synonym_jaccard']),
+                       FloatField(feat_dict['max_dbpedia_synonym_jaccard']),
+                       FloatField(float(feat_dict['has_overlapping_synonym'])),
+                       FloatField(feat_dict['all_synonym_jaccard']),
+                       FloatField(feat_dict['max_all_synonym_jaccard']),
 
-                       FloatField(float(has_same_root_word)),
-                       FloatField(root_word_jaccard)
+                       FloatField(float(feat_dict['has_same_root_word'])),
+                       FloatField(feat_dict['root_word_jaccard'])
                        ]
         return feature_vec
 
