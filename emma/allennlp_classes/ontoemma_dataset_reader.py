@@ -1,11 +1,11 @@
 from typing import Dict, List
 import logging
 import random
+import itertools
 
 from overrides import overrides
 import json
 import tqdm
-import spacy
 
 from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
@@ -20,13 +20,13 @@ from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from emma.allennlp_classes.boolean_field import BooleanField
 from emma.allennlp_classes.float_field import FloatField
 
+import spacy
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
-from nltk.metrics.distance import edit_distance
 from nltk.stem.snowball import SnowballStemmer
 from nltk.stem.wordnet import WordNetLemmatizer
+
 import emma.utils.string_utils as string_utils
-import emma.constants as constants
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -57,29 +57,23 @@ class OntologyMatchingDatasetReader(DatasetReader):
     """
     def __init__(self,
                  tokenizer: Tokenizer = None,
-                 name_token_indexers: Dict[str, TokenIndexer] = None,
+                 name_token_indexer: Dict[str, TokenIndexer] = None,
                  token_only_indexer: Dict[str, TokenIndexer] = None) -> None:
-        self._name_token_indexers = name_token_indexers or \
-                                    {'tokens': SingleIdTokenIndexer(namespace="tokens"),
-                                     'token_characters': TokenCharactersIndexer(namespace="token_characters")}
+        self._name_token_indexer = name_token_indexer or \
+                                   {'tokens': SingleIdTokenIndexer(namespace="tokens"),
+                                    'token_characters': TokenCharactersIndexer(namespace="token_characters")}
         self._token_only_indexer = token_only_indexer or \
                                    {'tokens': SingleIdTokenIndexer(namespace="tokens")}
         self._tokenizer = tokenizer or WordTokenizer()
 
         self._empty_token_text_field = TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
-        self._empty_list_token_text_field = ListField([
-            TextField(self._tokenizer.tokenize('00000'), self._token_only_indexer)
-        ])
-
-        self.PARENT_REL_LABELS = constants.UMLS_PARENT_REL_LABELS
-        self.CHILD_REL_LABELS = constants.UMLS_CHILD_REL_LABELS
 
         self.STOP = set(stopwords.words('english'))
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
         self.stemmer = SnowballStemmer("english")
         self.lemmatizer = WordNetLemmatizer()
-
         self.nlp = spacy.load('en')
+        self.token_dict = dict()
 
     @overrides
     def read(self, file_path):
@@ -105,37 +99,6 @@ class OntologyMatchingDatasetReader(DatasetReader):
                                      "Is the path correct?".format(file_path))
         return Dataset(instances)
 
-    @staticmethod
-    def _normalize_ent(ent):
-        norm_ent = dict()
-        norm_ent['canonical_name'] = string_utils.normalize_string(ent['canonical_name'])
-        norm_ent['aliases'] = [string_utils.normalize_string(a) for a in ent['aliases']]
-        norm_ent['definition'] = string_utils.normalize_string(ent['definition'])
-        norm_ent['par_relations'] = set([string_utils.normalize_string(i) for i in ent['par_relations']])
-        norm_ent['chd_relations'] = set([string_utils.normalize_string(i) for i in ent['chd_relations']])
-        return norm_ent
-
-    def _compute_tokens(self, ent):
-        """
-        Compute tokens from given entity
-        :param ent:
-        :return:
-        """
-        name_tokens = string_utils.tokenize_string(ent['canonical_name'], self.tokenizer, self.STOP)
-        stemmed_tokens = tuple([self.stemmer.stem(w) for w in name_tokens])
-        lemmatized_tokens = tuple([self.lemmatizer.lemmatize(w) for w in name_tokens])
-        character_tokens = tuple(string_utils.get_character_n_grams(
-            ent['canonical_name'], constants.NGRAM_SIZE
-        ))
-
-        alias_tokens = [string_utils.tokenize_string(a, self.tokenizer, self.STOP) for a in ent['aliases']]
-
-        def_tokens = string_utils.tokenize_string(ent['definition'], self.tokenizer, self.STOP)
-
-        return [
-            name_tokens, stemmed_tokens, lemmatized_tokens, character_tokens, alias_tokens, def_tokens
-        ]
-
     def _dependency_parse(self, name):
         """
         compute dependency parse of name and return root word, and all chunk root words
@@ -148,169 +111,195 @@ class OntologyMatchingDatasetReader(DatasetReader):
         root_words = set([t for d, t in root_text])
         return root, root_words
 
-    def _get_features(self, s_ent, t_ent):
+    def _tokenize(self, s):
+        return string_utils.tokenize_string(s, self.tokenizer, self.STOP)
+
+    def _tokenize_list(self, l):
+        return [self._tokenize(i) for i in l]
+
+    @staticmethod
+    def _order_sublists(l):
+        return [tuple(sorted(i)) for i in l]
+
+    @staticmethod
+    def _char_tokenize(s, ngram_size):
+        return string_utils.get_character_n_grams(s, ngram_size)
+
+    def _char_tokenize_list(self, l, ngram_size):
+        return [self._char_tokenize(i, ngram_size) for i in l]
+
+    def _stem_tokens(self, t):
+        return [self.stemmer.stem(i) for i in t]
+
+    def _lemmatize_tokens(self, t):
+        return [self.lemmatizer.lemmatize(i) for i in t]
+
+    def _stem_list(self, l):
+        return [self._stem_tokens(t) for t in l]
+
+    def _lemmatize_list(self, l):
+        return [self._lemmatize_tokens(t) for t in l]
+
+    @staticmethod
+    def _acronym(t):
+        return ''.join([i[0] for i in t])
+
+    def _acronym_list(self, l):
+        return [self._acronym(t) for t in l]
+
+    @staticmethod
+    def _jaccard(a, b):
+        return string_utils.get_jaccard_similarity(set(a), set(b))
+
+    def _max_jaccard(self, alist, blist):
+        max_jacc = 0.0
+        for a, b in itertools.product(alist, blist):
+            jacc = self._jaccard(a, b)
+            if jacc == 1.0:
+                return 1.0
+            if jacc > max_jacc:
+                max_jacc = jacc
+        return max_jacc
+
+    @staticmethod
+    def _overlaps(a, b):
+        return not set(a).isdisjoint(b)
+
+    def _form_dict_entry(self, ent):
+        dict_entry = dict()
+        dict_entry['name_tokens'] = self._tokenize(ent['canonical_name'])
+        dict_entry['stemmed_name_tokens'] = self._stem_tokens(dict_entry['name_tokens'])
+        dict_entry['lemmatized_name_tokens'] = self._lemmatize_tokens(dict_entry['name_tokens'])
+        dict_entry['name_char_4grams'] = self._char_tokenize(ent['canonical_name'], 4)
+        dict_entry['name_char_5grams'] = self._char_tokenize(ent['canonical_name'], 5)
+        dict_entry['alias_tokens'] = self._tokenize_list(ent['aliases'])
+        dict_entry['alias_char_4grams'] = self._char_tokenize_list(ent['aliases'], 4)
+        dict_entry['alias_char_5grams'] = self._char_tokenize_list(ent['aliases'], 5)
+        dict_entry['acronyms'] = self._acronym_list(dict_entry['alias_tokens'])
+        dict_entry['alias_token_set'] = self._order_sublists(dict_entry['alias_tokens'])
+        dict_entry['def_tokens'] = self._tokenize(ent['definition'])
+        dict_entry['wiki_ent_tokens'] = self._tokenize_list(ent['wiki_entities'])
+        dict_entry['mesh_syn_tokens'] = self._tokenize_list(ent['mesh_synonyms'])
+        dict_entry['dbpedia_syn_tokens'] = self._tokenize_list(ent['dbpedia_synonyms'])
+        dict_entry['parse_root'] = self._dependency_parse(ent['canonical_name'])
+        return dict_entry
+
+    def _get_dict_entry(self, ent):
+        if ent['research_entity_id'] not in self.token_dict:
+            self.token_dict[ent['research_entity_id']] = self._form_dict_entry(ent)
+        return self.token_dict[ent['research_entity_id']]
+
+    def _get_features(self, s_ent: dict, t_ent: dict):
         """
-        compute all LR model features
-        :param s_ent:
-        :param t_ent:
+        Calculate features between two entities s_ent and t_ent from source and target KBs respectively
+        :param s_ent: entity from source KB
+        :param t_ent: entity from target KB
         :return:
         """
-        s_name_tokens, s_stem_tokens, s_lemm_tokens, s_char_tokens, s_alias_tokens, s_def_tokens = self._compute_tokens(s_ent)
-        t_name_tokens, t_stem_tokens, t_lemm_tokens, t_char_tokens, t_alias_tokens, t_def_tokens = self._compute_tokens(t_ent)
 
-        has_same_canonical_name = (s_name_tokens == t_name_tokens)
-        has_same_stemmed_name = (s_stem_tokens == t_stem_tokens)
-        has_same_lemmatized_name = (s_lemm_tokens == t_lemm_tokens)
-        has_same_char_tokens = (s_char_tokens == t_char_tokens)
-        has_alias_in_common = (len(set(s_alias_tokens).intersection(set(t_alias_tokens))) > 0)
+        # FOR TRAINING
+        if 'mesh_synonynms' in s_ent:
+            s_ent['mesh_synonyms'] = s_ent['mesh_synonynms']
 
-        # initialize similarity features
-        name_token_jaccard_similarity = 1.0
-        inverse_name_token_edit_distance = 1.0
-        name_stem_jaccard_similarity = 1.0
-        inverse_name_stem_edit_distance = 1.0
-        name_lemm_jaccard_similarity = 1.0
-        inverse_name_lemm_edit_distance = 1.0
-        name_char_jaccard_similarity = 1.0
-        inverse_name_char_edit_distance = 1.0
+        if 'mesh_synonynms' in t_ent:
+            t_ent['mesh_synonyms'] = t_ent['mesh_synonynms']
 
-        # jaccard similarity and token edit distance
-        max_changes = len(s_name_tokens) + len(t_name_tokens)
-        max_char_changes = len(s_char_tokens) + len(t_char_tokens)
+        s_info = self._get_dict_entry(s_ent)
+        t_info = self._get_dict_entry(t_ent)
 
-        if not has_same_canonical_name:
-            name_token_jaccard_similarity = string_utils.get_jaccard_similarity(
-                set(s_name_tokens), set(t_name_tokens)
-            )
-            inverse_name_token_edit_distance = 1.0 - edit_distance(
-                s_name_tokens, t_name_tokens
-            ) / max_changes
+        has_same_canonical_name = (s_ent['canonical_name'] == t_ent['canonical_name'])
+        has_same_canonical_name_tokens = (s_info['name_tokens'] == t_info['name_tokens'])
+        has_same_canonical_name_token_set = (set(s_info['name_tokens']) == set(t_info['name_tokens']))
+        has_same_stemmed_name_tokens = (s_info['stemmed_name_tokens'] == t_info['stemmed_name_tokens'])
+        has_same_stemmed_name_token_set = (set(s_info['stemmed_name_tokens']) == set(t_info['stemmed_name_tokens']))
+        has_same_lemmatized_name_tokens = (s_info['lemmatized_name_tokens'] == t_info['lemmatized_name_tokens'])
+        has_same_lemmatized_name_token_set = (set(s_info['lemmatized_name_tokens']) == set(t_info['lemmatized_name_tokens']))
 
+        name_char_4gram_jaccard = self._jaccard(s_info['name_char_4grams'], t_info['name_char_4grams'])
+        name_char_5gram_jaccard = self._jaccard(s_info['name_char_5grams'], t_info['name_char_5grams'])
 
-        if not has_same_stemmed_name:
-            name_stem_jaccard_similarity = string_utils.get_jaccard_similarity(
-                set(s_stem_tokens), set(t_stem_tokens)
-            )
-            inverse_name_stem_edit_distance = 1.0 - edit_distance(
-                s_stem_tokens, t_stem_tokens
-            ) / max_changes
+        has_alias_in_common = self._overlaps(s_ent['aliases'], t_ent['aliases'])
+        has_alias_tokens_in_common = self._overlaps(s_info['alias_tokens'], t_info['alias_tokens'])
+        has_alias_token_set_in_common = self._overlaps(s_info['alias_token_set'], t_info['alias_token_set'])
 
-        if not has_same_lemmatized_name:
-            name_lemm_jaccard_similarity = string_utils.get_jaccard_similarity(
-                set(s_lemm_tokens), set(t_lemm_tokens)
-            )
-            inverse_name_lemm_edit_distance = 1.0 - edit_distance(
-                s_lemm_tokens, t_lemm_tokens
-            ) / max_changes
+        alias_token_jaccard = self._jaccard(s_info['alias_token_set'], t_info['alias_token_set'])
+        max_alias_token_jaccard = self._max_jaccard(s_info['alias_token_set'], t_info['alias_token_set'])
+        max_alias_4gram_jaccard = self._max_jaccard(s_info['alias_char_4grams'], t_info['alias_char_4grams'])
+        max_alias_5gram_jaccard = self._max_jaccard(s_info['alias_char_5grams'], t_info['alias_char_5grams'])
 
-        if not has_same_char_tokens:
-            name_char_jaccard_similarity = string_utils.get_jaccard_similarity(
-                set(s_char_tokens), set(t_char_tokens)
-            )
-            inverse_name_char_edit_distance = 1 - edit_distance(
-                s_char_tokens, t_char_tokens
-            ) / max_char_changes
+        has_same_acronym = self._overlaps(s_info['acronyms'], t_info['acronyms']) or \
+                           self._overlaps(s_info['acronyms'], t_ent['aliases']) or \
+                           self._overlaps(s_ent['aliases'], t_info['acronyms'])
 
-        max_alias_token_jaccard = 0.0
-        min_alias_edit_distance = 1.0
-        best_s_alias = s_ent['aliases'][0]
-        best_t_alias = t_ent['aliases'][0]
+        definition_token_jaccard = self._jaccard(s_info['def_tokens'], t_info['def_tokens'])
 
-        if not has_alias_in_common:
-            for s_ind, s_a_tokens in enumerate(s_alias_tokens):
-                for t_ind, t_a_tokens in enumerate(t_alias_tokens):
-                    if s_a_tokens and t_a_tokens:
-                        j_ind = string_utils.get_jaccard_similarity(
-                            set(s_a_tokens), set(t_a_tokens)
-                        )
-                        if j_ind > max_alias_token_jaccard:
-                            max_alias_token_jaccard = j_ind
-                            best_s_alias = s_ent['aliases'][s_ind]
-                            best_t_alias = t_ent['aliases'][t_ind]
-                        e_dist = edit_distance(s_a_tokens, t_a_tokens) / (
-                            len(s_a_tokens) + len(t_a_tokens)
-                        )
-                        if e_dist < min_alias_edit_distance:
-                            min_alias_edit_distance = e_dist
+        has_same_wiki_entity = self._overlaps(s_ent['wiki_entities'], t_ent['wiki_entities'])
+        wiki_entity_jaccard = self._jaccard(s_ent['wiki_entities'], t_ent['wiki_entities'])
+        max_wiki_entity_jaccard = self._max_jaccard(s_info['wiki_ent_tokens'], t_info['wiki_ent_tokens'])
 
-        # has any relationships
-        has_parents = (len(s_ent['par_relations']) > 0 and len(t_ent['par_relations']) > 0)
-        has_children = (len(s_ent['chd_relations']) > 0 and len(t_ent['chd_relations']) > 0)
+        has_same_mesh_synonym = self._overlaps(s_ent['mesh_synonyms'], t_ent['mesh_synonyms'])
+        mesh_synonym_jaccard = self._jaccard(s_ent['mesh_synonyms'], t_ent['mesh_synonyms'])
+        max_mesh_synonym_jaccard = self._max_jaccard(s_info['mesh_syn_tokens'], t_info['mesh_syn_tokens'])
 
-        percent_parents_in_common = 0.0
-        percent_children_in_common = 0.0
+        has_same_dbpedia_synonym = self._overlaps(s_ent['dbpedia_synonyms'], t_ent['dbpedia_synonyms'])
+        dbpedia_synonym_jaccard = self._jaccard(s_ent['dbpedia_synonyms'], t_ent['dbpedia_synonyms'])
+        max_dbpedia_synonym_jaccard = self._max_jaccard(s_info['dbpedia_syn_tokens'], t_info['dbpedia_syn_tokens'])
 
-        # any relationships in common
-        if has_parents:
-            max_parents_in_common = (len(s_ent['par_relations']) + len(t_ent['par_relations'])) / 2
-            percent_parents_in_common = len(
-                s_ent['par_relations'].intersection(t_ent['par_relations'])
-            ) / max_parents_in_common
+        s_all = s_ent['aliases'] + s_ent['wiki_entities'] + s_ent['mesh_synonyms'] + s_ent['dbpedia_synonyms']
+        t_all = t_ent['aliases'] + t_ent['wiki_entities'] + t_ent['mesh_synonyms'] + t_ent['dbpedia_synonyms']
 
-        if has_children:
-            max_children_in_common = (len(s_ent['chd_relations']) + len(t_ent['chd_relations'])) / 2
-            percent_children_in_common = len(
-                s_ent['chd_relations'].intersection(t_ent['chd_relations'])
-            ) / max_children_in_common
+        s_all_tokens = s_info['alias_tokens'] + s_info['wiki_ent_tokens'] + \
+                       s_info['mesh_syn_tokens'] + s_info['dbpedia_syn_tokens']
+        t_all_tokens = t_info['alias_tokens'] + t_info['wiki_ent_tokens'] + \
+                       t_info['mesh_syn_tokens'] + t_info['dbpedia_syn_tokens']
 
-        s_acronyms = [(i[0] for i in a) for a in s_alias_tokens]
-        t_acronyms = [(i[0] for i in a) for a in t_alias_tokens]
-        has_same_acronym = (len(set(s_acronyms).intersection(set(t_acronyms))) > 0)
+        has_overlapping_synonym = self._overlaps(s_all, t_all)
+        all_synonym_jaccard = self._jaccard(s_all, t_all)
+        max_all_synonym_jaccard = self._max_jaccard(s_all_tokens, t_all_tokens)
 
-        s_name_root, s_name_heads = self._dependency_parse(s_ent['canonical_name'])
-        t_name_root, t_name_heads = self._dependency_parse(t_ent['canonical_name'])
-
-        has_same_name_root_word = (s_name_root == t_name_root)
-        has_same_name_chunk_heads = (s_name_heads == t_name_heads)
-        name_chunk_heads_jaccard_similarity = string_utils.get_jaccard_similarity(
-            s_name_heads, t_name_heads
-        )
-
-        s_alias_root, s_alias_heads = self._dependency_parse(best_s_alias)
-        t_alias_root, t_alias_heads = self._dependency_parse(best_t_alias)
-
-        has_same_alias_root_word = (s_alias_root == t_alias_root)
-        has_same_alias_chunk_heads = (s_alias_heads == t_alias_heads)
-        alias_chunk_heads_jaccard_similarity = string_utils.get_jaccard_similarity(
-            s_alias_heads, t_alias_heads
-        )
-
-        def_jaccard_similarity = string_utils.get_jaccard_similarity(
-            set(s_def_tokens), set(t_def_tokens)
-        )
+        has_same_root_word = (s_info['parse_root'][0] == t_info['parse_root'][0])
+        root_word_jaccard = self._jaccard(s_info['parse_root'][1], t_info['parse_root'][1])
 
         # form feature vector
         feature_vec = [FloatField(float(has_same_canonical_name)),
-                       FloatField(float(has_same_stemmed_name)),
-                       FloatField(float(has_same_lemmatized_name)),
-                       FloatField(float(has_same_char_tokens)),
+                       FloatField(float(has_same_canonical_name_tokens)),
+                       FloatField(float(has_same_canonical_name_token_set)),
+                       FloatField(float(has_same_stemmed_name_tokens)),
+                       FloatField(float(has_same_stemmed_name_token_set)),
+
+                       FloatField(float(has_same_lemmatized_name_tokens)),
+                       FloatField(float(has_same_lemmatized_name_token_set)),
+                       FloatField(name_char_4gram_jaccard),
+                       FloatField(name_char_5gram_jaccard),
                        FloatField(float(has_alias_in_common)),
 
-                       FloatField(name_token_jaccard_similarity),
-                       FloatField(inverse_name_token_edit_distance),
-                       FloatField(name_stem_jaccard_similarity),
-                       FloatField(inverse_name_stem_edit_distance),
-                       FloatField(name_lemm_jaccard_similarity),
-
-                       FloatField(inverse_name_lemm_edit_distance),
-                       FloatField(name_char_jaccard_similarity),
-                       FloatField(inverse_name_char_edit_distance),
+                       FloatField(float(has_alias_tokens_in_common)),
+                       FloatField(float(has_alias_token_set_in_common)),
+                       FloatField(alias_token_jaccard),
                        FloatField(max_alias_token_jaccard),
-                       FloatField(1.0 - min_alias_edit_distance),
+                       FloatField(max_alias_4gram_jaccard),
 
-                       FloatField(percent_parents_in_common),
-                       FloatField(percent_children_in_common),
+                       FloatField(max_alias_5gram_jaccard),
                        FloatField(float(has_same_acronym)),
-                       FloatField(float(has_same_name_root_word)),
-                       FloatField(float(has_same_name_chunk_heads)),
+                       FloatField(definition_token_jaccard),
+                       FloatField(float(has_same_wiki_entity)),
+                       FloatField(wiki_entity_jaccard),
 
-                       FloatField(name_chunk_heads_jaccard_similarity),
-                       FloatField(float(has_same_alias_root_word)),
-                       FloatField(float(has_same_alias_chunk_heads)),
-                       FloatField(alias_chunk_heads_jaccard_similarity),
-                       FloatField(def_jaccard_similarity)
+                       FloatField(max_wiki_entity_jaccard),
+                       FloatField(float(has_same_mesh_synonym)),
+                       FloatField(mesh_synonym_jaccard),
+                       FloatField(max_mesh_synonym_jaccard),
+                       FloatField(float(has_same_dbpedia_synonym)),
+
+                       FloatField(dbpedia_synonym_jaccard),
+                       FloatField(max_dbpedia_synonym_jaccard),
+                       FloatField(float(has_overlapping_synonym)),
+                       FloatField(all_synonym_jaccard),
+                       FloatField(max_all_synonym_jaccard),
+
+                       FloatField(float(has_same_root_word)),
+                       FloatField(root_word_jaccard)
                        ]
-
         return feature_vec
 
     @overrides
@@ -332,49 +321,38 @@ class OntologyMatchingDatasetReader(DatasetReader):
 
         fields: Dict[str, Field] = {}
 
-        fields['sparse_features'] = ListField(self._get_features(self._normalize_ent(s_ent), self._normalize_ent(t_ent)))
-
-        # tokenize names
-        s_name_tokens = self._tokenizer.tokenize('00000 ' + s_ent['canonical_name'])
-        t_name_tokens = self._tokenizer.tokenize('00000 ' + t_ent['canonical_name'])
+        fields['engineered_features'] = ListField(
+            self._get_features(s_ent, t_ent)
+        )
 
         # add entity name fields
-        fields['s_ent_name'] = TextField(s_name_tokens, self._name_token_indexers)
-        fields['t_ent_name'] = TextField(t_name_tokens, self._name_token_indexers)
+        fields['s_ent_name'] = TextField(
+            self._tokenizer.tokenize('00000 ' + s_ent['canonical_name']), self._name_token_indexer
+        )
+        fields['t_ent_name'] = TextField(
+            self._tokenizer.tokenize('00000 ' + t_ent['canonical_name']), self._name_token_indexer
+        )
 
         s_aliases = sample_n(s_ent['aliases'], 16, 128)
         t_aliases = sample_n(t_ent['aliases'], 16, 128)
 
         # add entity alias fields
-        fields['s_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
+        fields['s_ent_alias'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexer)
              for a in s_aliases]
         )
-        fields['t_ent_aliases'] = ListField(
-            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexers)
+        fields['t_ent_alias'] = ListField(
+            [TextField(self._tokenizer.tokenize('00000 ' + a), self._name_token_indexer)
              for a in t_aliases]
         )
 
         # add entity definition fields
         fields['s_ent_def'] = TextField(
             self._tokenizer.tokenize(s_ent['definition']), self._token_only_indexer
-        ) if s_ent['definition'] else self._empty_token_text_field
+        ) if len(s_ent['definition']) > 5 else self._empty_token_text_field
         fields['t_ent_def'] = TextField(
             self._tokenizer.tokenize(t_ent['definition']), self._token_only_indexer
-        ) if t_ent['definition'] else self._empty_token_text_field
-
-        # add entity context fields
-        s_contexts = sample_n(s_ent['other_contexts'], 16, 256)
-        t_contexts = sample_n(t_ent['other_contexts'], 16, 256)
-
-        fields['s_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in s_contexts]
-        )
-        fields['t_ent_context'] = ListField(
-            [TextField(self._tokenizer.tokenize(c), self._token_only_indexer)
-             for c in t_contexts]
-        )
+        ) if len(t_ent['definition']) > 5 else self._empty_token_text_field
 
         # add boolean label (0 = no match, 1 = match)
         fields['label'] = BooleanField(label)
@@ -384,9 +362,9 @@ class OntologyMatchingDatasetReader(DatasetReader):
     @classmethod
     def from_params(cls, params: Params) -> 'OntologyMatchingDatasetReader':
         tokenizer = Tokenizer.from_params(params.pop('tokenizer', {}))
-        name_token_indexers = TokenIndexer.dict_from_params(params.pop('name_token_indexers', {}))
+        name_token_indexer = TokenIndexer.dict_from_params(params.pop('name_token_indexer', {}))
         token_only_indexer = TokenIndexer.dict_from_params(params.pop('token_only_indexer', {}))
         params.assert_empty(cls.__name__)
         return OntologyMatchingDatasetReader(tokenizer=tokenizer,
-                                             name_token_indexers=name_token_indexers,
+                                             name_token_indexer=name_token_indexer,
                                              token_only_indexer=token_only_indexer)
