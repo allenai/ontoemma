@@ -19,6 +19,7 @@ from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 from emma.paths import StandardFilePath
+import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 from allennlp.commands.train import train_model_from_file
@@ -189,6 +190,55 @@ class OntoEmma:
                 pairs.append([obj['source_ent'], obj['target_ent']])
                 labels.append(obj['label'])
         return pairs, labels
+
+    @staticmethod
+    def _normalize_kb(kb):
+        """
+        Normalize all strings in kb
+        :param kb:
+        :return:
+        """
+        for ent in kb.entities:
+            ent.canonical_name = string_utils.normalize_string(ent.canonical_name)
+            ent.aliases = [string_utils.normalize_string(a) for a in ent.aliases]
+            ent.definition = string_utils.normalize_string(ent.definition)
+
+            ent.additional_details['wiki_entities'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['wiki_entities']
+            ] if 'wiki_entities' in ent.additional_details else []
+
+            ent.additional_details['mesh_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['mesh_synonynms']
+            ] if 'mesh_synonynms' in ent.additional_details else []
+
+            ent.additional_details['dbpedia_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['dbpedia_synonyms']
+            ] if 'dbpedia_synonyms' in ent.additional_details else []
+
+            all_rels = [kb.relations[r_id] for r_id in ent.relation_ids]
+            par_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
+            ]
+            chd_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
+            ]
+            sib_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SIBLING_REL_LABELS
+            ]
+            syn_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SYNONYM_REL_LABELS
+            ]
+
+            ent.additional_details['par_relations'] = list(set(par_ents))
+            ent.additional_details['chd_relations'] = list(set(chd_ents))
+            ent.additional_details['sib_relations'] = list(set(sib_ents))
+            ent.additional_details['syn_relations'] = list(set(syn_ents))
+
+        return kb
 
     @staticmethod
     def _form_json_entity_small(ent_to_json: KBEntity):
@@ -362,9 +412,9 @@ class OntoEmma:
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
-        feat_gen = EngineeredFeatureGenerator([item for sublist in eval_pairs for item in sublist])
+        feat_gen = EngineeredFeatureGenerator()
         eval_features = [
-            feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            feat_gen.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in eval_pairs
         ]
 
@@ -464,31 +514,6 @@ class OntoEmma:
         :return:
         """
 
-        # returns json representation of entity that matches what feature generator expects
-        def _form_json_entity(ent, kb):
-            parent_ids = [kb.relations[rel_id].entity_ids[1]
-                          for rel_id in ent.relation_ids
-                          if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
-
-            child_ids = [kb.relations[rel_id].entity_ids[1]
-                         for rel_id in ent.relation_ids
-                         if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
-
-            parents = [kb.get_entity_by_research_entity_id(i).canonical_name
-                       for i in parent_ids if i in kb.research_entity_id_to_entity_index]
-
-            children = [kb.get_entity_by_research_entity_id(i).canonical_name
-                        for i in child_ids if i in kb.research_entity_id_to_entity_index]
-
-            return {
-                'research_entity_id': ent.research_entity_id,
-                'canonical_name': ent.canonical_name,
-                'aliases': ent.aliases,
-                'definition': ent.definition,
-                'par_relations': parents,
-                'chd_relations': children
-            }
-
         alignment = []
 
         feature_generator = EngineeredFeatureGenerator()
@@ -505,7 +530,11 @@ class OntoEmma:
             for t_ent_id in candidate_selector.select_candidates(
                     s_ent_id
             )[:constants.KEEP_TOP_K_CANDIDATES]:
-                features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                features = [feature_generator.calculate_features(
+                    self._form_json_entity(s_ent, source_kb),
+                    self._form_json_entity(t_ent, target_kb)
+                )]
                 score = model.predict_entity_pair(features)
                 if score[0][1] >= constants.LR_SCORE_THRESHOLD:
                     alignment.append((s_ent_id, t_ent_id, score[0][1]))
@@ -726,6 +755,10 @@ class OntoEmma:
         sys.stdout.write("Loading KBs...\n")
         s_kb = self.load_kb(s_kb_path)
         t_kb = self.load_kb(t_kb_path)
+
+        sys.stdout.write("Normalizing KBs...\n")
+        s_kb = self._normalize_kb(s_kb)
+        t_kb = self._normalize_kb(t_kb)
 
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)

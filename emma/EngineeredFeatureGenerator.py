@@ -213,12 +213,6 @@ class EngineeredFeatureGenerator:
         :param ent:
         :return:
         """
-        if 'research_entity_id' not in ent or \
-           'canonical_name' not in ent or \
-           'aliases' not in ent or \
-           'definition' not in ent:
-            return False
-
         if 'mesh_synonynms' in ent:
             ent['mesh_synonyms'] = ent['mesh_synonynms']
         if 'mesh_synonyms' not in ent:
@@ -227,7 +221,6 @@ class EngineeredFeatureGenerator:
             ent['dbpedia_synonyms'] = []
         if 'wiki_entities' not in ent:
             ent['wiki_entities'] = []
-
         return ent
 
     def calculate_features(self, s_ent: dict, t_ent: dict):
