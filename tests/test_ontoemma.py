@@ -40,7 +40,19 @@ class TestOntoEmmaAlign(unittest.TestCase):
         assert f1 >= 0.0
 
     def test_lr(self):
+        config_file = os.path.join(TEST_DATA, 'test_lr_config_file.json')
         model_path = os.path.join(TEST_DATA, 'test_lr_model.pickle')
+
+        if os.path.exists(model_path):
+            os.remove(model_path)
+
+        matcher = OntoEmma()
+        matcher.train(
+            'lr', model_path, config_file
+        )
+
+        assert(os.path.exists(model_path))
+
         source_ont_file = os.path.join(TEST_DATA, 'test_source_ont.json')
         target_ont_file = os.path.join(TEST_DATA, 'test_target_ont.json')
         input_alignment_file = os.path.join(TEST_DATA, 'test_input_alignment.tsv')
