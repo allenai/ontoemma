@@ -206,7 +206,8 @@ class EngineeredFeatureGenerator:
             self.token_dict[ent['research_entity_id']] = self._form_dict_entry(ent)
         return self.token_dict[ent['research_entity_id']]
 
-    def _validate_entity(self, ent):
+    @staticmethod
+    def _validate_entity(ent):
         """
         Validate entity data structure
         :param ent:

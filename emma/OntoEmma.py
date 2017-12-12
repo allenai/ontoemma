@@ -14,7 +14,7 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
-from emma.kb.kb_utils_refactor import KnowledgeBase
+from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
@@ -190,15 +190,59 @@ class OntoEmma:
                 labels.append(obj['label'])
         return pairs, labels
 
-    def _train_lr(self, model_path: str, config_file: str):
+    @staticmethod
+    def _form_json_entity_small(ent_to_json: KBEntity):
         """
-        Train a logistic regression model
+        Forms json representation of entity from kb without relations
+        :param ent_to_json:
+        :param kb:
+        :return:
+        """
+        return {
+            'research_entity_id': ent_to_json.research_entity_id,
+            'canonical_name': ent_to_json.canonical_name,
+            'aliases': ent_to_json.aliases,
+            'definition': ent_to_json.definition,
+            'other_contexts': ent_to_json.other_contexts,
+            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
+            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
+            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms']
+        }
+
+    def _form_json_entity(self, ent_to_json: KBEntity, kb: KnowledgeBase):
+        """
+        Forms json representation of entity from kb
+        :param ent_to_json:
+        :param kb:
+        :return:
+        """
+        return {
+            'research_entity_id': ent_to_json.research_entity_id,
+            'canonical_name': ent_to_json.canonical_name,
+            'aliases': ent_to_json.aliases,
+            'definition': ent_to_json.definition,
+            'other_contexts': ent_to_json.other_contexts,
+            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
+            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
+            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms'],
+            'par_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['par_relations'] if e is not None],
+            'chd_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['chd_relations'] if e is not None],
+            'sib_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['sib_relations'] if e is not None],
+            'syn_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
+                              for e in ent_to_json.additional_details['syn_relations'] if e is not None]
+        }
+
+    def _apply_model_train(self, model, model_path, config_file):
+        """
+        Apply loaded model to config_file data and save
+        :param model:
         :param model_path:
         :param config_file:
         :return:
         """
-        model = OntoEmmaLRModel()
-
         # read model config
         with open(config_file, 'r') as f:
             config = json.load(f)
@@ -212,21 +256,24 @@ class OntoEmma:
         dev_pairs, dev_labels = self._alignments_to_pairs_and_labels(dev_data_path)
 
         sys.stdout.write('Training data size: %i\n' % len(training_labels))
-        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
-        feat_gen_train = EngineeredFeatureGenerator([item for sublist in training_pairs for item in sublist])
-        training_features = [
-            feat_gen_train.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            for s_ent, t_ent in training_pairs
-        ]
+        feat_gen_train = EngineeredFeatureGenerator()
+        training_features = []
+        for s_ent, t_ent in tqdm.tqdm(training_pairs, total=len(training_pairs)):
+            training_features.append(
+                feat_gen_train.calculate_features(s_ent, t_ent)
+            )
+
+        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for development pairs
-        feat_gen_dev = EngineeredFeatureGenerator([item for sublist in dev_pairs for item in sublist])
-        dev_features = [
-            feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            for s_ent, t_ent in dev_pairs
-        ]
+        feat_gen_dev = EngineeredFeatureGenerator()
+        dev_features = []
+        for s_ent, t_ent in tqdm.tqdm(dev_pairs, total=len(dev_pairs)):
+            dev_features.append(
+                feat_gen_dev.calculate_features(s_ent, t_ent)
+            )
 
         model.train(training_features, training_labels)
 
@@ -241,6 +288,17 @@ class OntoEmma:
         )
 
         model.save(model_path)
+        return
+
+    def _train_lr(self, model_path: str, config_file: str):
+        """
+        Train a logistic regression model
+        :param model_path:
+        :param config_file:
+        :return:
+        """
+        model = OntoEmmaLRModel()
+        self._apply_model_train(model, model_path, config_file)
         return
 
     def _train_nn(self, model_path: str, config_file: str):
@@ -433,10 +491,7 @@ class OntoEmma:
 
         alignment = []
 
-        feature_generator = EngineeredFeatureGenerator(
-            [_form_json_entity(ent, source_kb) for ent in source_kb.entities] +
-            [_form_json_entity(ent, target_kb) for ent in target_kb.entities]
-        )
+        feature_generator = EngineeredFeatureGenerator()
 
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaLRModel()
