@@ -8,6 +8,7 @@ import itertools
 import requests
 import jsonlines
 import numpy as np
+from copy import copy
 from collections import defaultdict
 from lxml import etree
 from django.core.validators import URLValidator
@@ -19,6 +20,7 @@ from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
 from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 from emma.paths import StandardFilePath
+from emma.utils.modified_hungarian import ModifiedHungarian
 import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
@@ -330,11 +332,11 @@ class OntoEmma:
 
         for features, label in zip(eval_features, eval_labels):
             prediction = model.predict_entity_pair(features)
-            if prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 1:
+            if prediction[0][1] > constants.SIM_SCORE_THRESHOLD and label == 1:
                 tp += 1
-            elif prediction[0][1] > constants.LR_SCORE_THRESHOLD and label == 0:
+            elif prediction[0][1] > constants.SIM_SCORE_THRESHOLD and label == 0:
                 fp += 1
-            elif prediction[0][0] > constants.LR_SCORE_THRESHOLD and label == 1:
+            elif prediction[0][0] > constants.SIM_SCORE_THRESHOLD and label == 1:
                 fn += 1
             else:
                 tn += 1
@@ -461,7 +463,7 @@ class OntoEmma:
         steps = 0
         next_step = [start_ent]
 
-        while steps < constants.LR_SCORE_THRESHOLD:
+        while steps < constants.NEIGHBORHOOD_GENERATION_STEPS:
             this_step = next_step
             next_step = []
             for current_ent in this_step:
@@ -483,7 +485,7 @@ class OntoEmma:
         :param path2:
         :return:
         """
-        return math.exp(-(len(path1) + len(path2))/2)
+        return math.exp(-(len(path1) + len(path2)) / 2)
 
     @staticmethod
     def _get_rep_similarity(rep1, rep2):
@@ -502,11 +504,12 @@ class OntoEmma:
         return sum((normalized_r1 * normalized_r2) / (np.linalg.norm(normalized_r1) * np.linalg.norm(normalized_r2)))
 
     @staticmethod
-    def _align_string_equiv(s_kb, t_kb):
+    def _align_string_equiv(s_kb, t_kb, cand_sel):
         """
         Align entities in two KBs using string equivalence
         :param s_kb:
         :param t_kb:
+        :param cand_sel:
         :return:
         """
         alignment = []
@@ -523,16 +526,187 @@ class OntoEmma:
                 [a.lower().replace('_', ' ').replace('-', '') for a in t_ent.aliases]
             )
 
-        for s_id, t_id in itertools.product(s_aliases, t_aliases):
-            if len(s_aliases[s_id].intersection(t_aliases[t_id])) > 0:
-                alignment.append((s_id, t_id, 1.0))
-                s_matched.add(s_id)
-                t_matched.add(t_id)
+        for s_ent in tqdm.tqdm(s_kb.entities, total=len(s_kb.entities)):
+            s_id = s_ent.research_entity_id
+            for t_id in cand_sel.select_candidates(s_id):
+                if len(s_aliases[s_id].intersection(t_aliases[t_id])) > 0:
+                    alignment.append((s_id, t_id, 1.0))
+                    s_matched.add(s_id)
+                    t_matched.add(t_id)
 
         s_remaining = set([e.research_entity_id for e in s_kb.entities]).difference(s_matched)
         t_remaining = set([e.research_entity_id for e in t_kb.entities]).difference(t_matched)
 
         return alignment, s_remaining, t_remaining
+
+    def _compute_best_alignment(self, align_strat, l_scores, n_scores, s_kb, t_kb):
+        """
+        Compute best bipartite alignment between s_kb and t_kb based on scores
+        :param l_scores: entity similarity scores
+        :param n_scores: entity similarity scores updated based on similarity of neighborhood entities
+        :param s_kb:
+        :param t_kb:
+        :return:
+        """
+        alignment = []
+
+        if align_strat == "best":
+            # keep all alignments about minimum score threshold
+            temp_alignments = defaultdict(list)
+            for (s_ent_id, t_ent_id), score in n_scores.items():
+                temp_alignments[s_ent_id].append((t_ent_id, score))
+
+            # select best match for each source entity
+            for s_ent_id, matches in temp_alignments.items():
+                if len(matches) > 0:
+                    m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                    if m_sort[0][1] >= constants.SIM_SCORE_THRESHOLD:
+                        alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+        elif align_strat == "all":
+            # keep all alignments about minimum score threshold
+            temp_alignments = defaultdict(list)
+            for (s_ent_id, t_ent_id), score in n_scores.items():
+                temp_alignments[s_ent_id].append((t_ent_id, score))
+
+            # select all matches for each source entity into alignment
+            for s_ent_id, matches in temp_alignments.items():
+                for m in matches:
+                    if m[1] >= constants.SIM_SCORE_THRESHOLD:
+                        alignment.append((s_ent_id, m[0], m[1]))
+        elif align_strat == "modh":
+            s_len = len(s_kb.entities)
+            t_len = len(t_kb.entities)
+
+            # create and populate graph adjacency matrix
+            cost_mat = np.ones((s_len, t_len))
+            print("Initial cost adjacency matrix size")
+            print(cost_mat.shape)
+
+            for (s_ent_id, t_ent_id), score in n_scores.items():
+                s_ind = s_kb.get_entity_index(s_ent_id)
+                t_ind = t_kb.get_entity_index(t_ent_id)
+                cost_mat[s_ind][t_ind] = 1.0 - score
+
+            # TODO: try reducing the mat by getting rid of the perfect matches
+            print("Computing best alignment...")
+            hmod = ModifiedHungarian(cost_mat)
+            indices = hmod.compute()
+            print("Length of assignment: %i" % len(indices))
+
+            total = 0.0
+            for row, column in indices:
+                score = 1.0 - cost_mat[row][column]
+                if score >= constants.SIM_SCORE_THRESHOLD:
+                    print('(%d, %d) -> %.2f' % (row, column, score))
+                    total += score
+                    alignment.append((s_kb.entities[row].research_entity_id,
+                                      t_kb.entities[column].research_entity_id,
+                                      score))
+
+            print('total profit=%.2f' % total)
+        else:
+            raise NotImplementedError("Error: Unknown alignment strategy.")
+
+        return alignment
+
+    def _compute_neighborhood_similarities(self, scores, s_kb, t_kb):
+        """
+        Compute neighborhood similarities of each pair of entities based on entity similarity scores
+        :param scores: Entity similarity scores
+        :param s_kb: Source KB
+        :param t_kb: Target KB
+        :return:
+        """
+        updated_neighborhood_sim = copy(scores)
+
+        # iteratively calculate global similarity scores
+        for i in range(0, constants.NEIGHBORHOOD_SIMILARITY_ITERATIONS):
+            neighborhood_sim = dict()
+
+            # iterate through all alignments
+            for (s_ent_id, t_ent_id), score in tqdm.tqdm(updated_neighborhood_sim.items(),
+                                                         total=len(updated_neighborhood_sim)):
+                s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
+                t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+
+                # generate regions around s_ent and t_ent not included s_ent and t_ent
+                s_region = self._get_region_around_ent(s_ent, s_kb)
+                t_region = self._get_region_around_ent(t_ent, t_kb)
+
+                # sum regional contributions to similarity
+                neighborhood_sum = 0.0
+                distance_weights = 0.0
+                for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                    if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]) and \
+                                    (s_neighbor_id, t_neighbor_id) in updated_neighborhood_sim:
+                        d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
+                        distance_weights += d_weight
+                        neighborhood_sum += d_weight * updated_neighborhood_sim[(s_neighbor_id, t_neighbor_id)]
+                if distance_weights > 0.0:
+                    adjusted_sim_val = neighborhood_sum / distance_weights
+                else:
+                    adjusted_sim_val = 0.0
+
+                neighborhood_sim[(s_ent_id, t_ent_id)] = adjusted_sim_val
+
+            # set local scores to newly computed neighborhood similarity scores
+            updated_neighborhood_sim = copy(neighborhood_sim)
+
+        return updated_neighborhood_sim
+
+    def _apply_model_align(self, model, s_kb, t_kb, cand_sel):
+        """
+        Align kbs with model
+        :param model:
+        :param source_kb:
+        :param target_kb:
+        :param cand_sel:
+        :return:
+        """
+
+        sys.stdout.write("Finding string equivalences...\n")
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(s_kb, t_kb, cand_sel)
+        sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
+
+        sim_scores = dict()
+        for s_id, t_id, score in alignment:
+            sim_scores[(s_id, t_id)] = 1.0
+
+        feat_gen = EngineeredFeatureGenerator()
+
+        sys.stdout.write("Making predictions...\n")
+
+        s_ent_tqdm = tqdm.tqdm(s_ent_ids,
+                               total=len(s_ent_ids))
+
+        for s_ent_id in s_ent_tqdm:
+            s_ent = s_kb.get_entity_by_research_entity_id(s_ent_id)
+            if s_ent.canonical_name == s_ent_id:
+                continue
+            for t_ent_id in cand_sel.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
+                if t_ent_id in t_ent_ids:
+                    t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
+                    if t_ent.canonical_name == t_ent_id:
+                        continue
+                    features = [feat_gen.calculate_features(self._form_json_entity(s_ent, s_kb),
+                                                            self._form_json_entity(t_ent, t_kb))]
+                    score = model.predict_entity_pair(features)
+                    sim_scores[(s_ent_id, t_ent_id)] = score[0][1]
+
+        return sim_scores
+
+    def _align_lr(self, model_path, source_kb, target_kb, candidate_selector):
+        """
+        Align using logistic regression model
+        :param source_kb:
+        :param target_kb:
+        :param candidate_selector:
+        :return:
+        """
+        sys.stdout.write("Loading model...\n")
+        model = OntoEmmaLRModel()
+        model.load(model_path)
+        return self._apply_model_align(model, source_kb, target_kb, candidate_selector)
 
     def _align_nn(self, model_path, source_kb, target_kb, candidate_selector, cuda_device, batch_size=128):
         """
@@ -543,27 +717,6 @@ class OntoEmma:
         :param cuda_device: GPU device number
         :return:
         """
-        # returns json representation of entity
-        def _form_json_entity(ent_to_json, kb):
-            all_rels = [kb.relations[r_id] for r_id in ent_to_json.relation_ids]
-            par_ents = [
-                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
-            ]
-            chd_ents = [
-                kb.get_entity_by_research_entity_id(r.entity_ids[1]) for r in all_rels
-                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
-            ]
-            return {
-                'research_entity_id': ent_to_json.research_entity_id,
-                'canonical_name': ent_to_json.canonical_name,
-                'aliases': ent_to_json.aliases,
-                'definition': ent_to_json.definition,
-                'other_contexts': ent_to_json.other_contexts,
-                'par_relations': [e.canonical_name for e in par_ents],
-                'chd_relations': [e.canonical_name for e in chd_ents]
-            }
-
         from emma.allennlp_classes.ontoemma_dataset_reader import OntologyMatchingDatasetReader
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
@@ -582,7 +735,7 @@ class OntoEmma:
         sys.stdout.write("Making predictions...\n")
         s_ent_tqdm = tqdm.tqdm(s_ent_ids,
                                total=len(s_ent_ids))
-        temp_alignments = defaultdict(list)
+        sim_scores = dict()
 
         if cuda_device > 0:
             with device(cuda_device):
@@ -593,8 +746,8 @@ class OntoEmma:
                     for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                         t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                         json_data = {
-                            'source_ent': _form_json_entity(s_ent, source_kb),
-                            'target_ent': _form_json_entity(t_ent, target_kb),
+                            'source_ent': self._form_json_entity_small(s_ent),
+                            'target_ent': self._form_json_entity_small(t_ent),
                             'label': 0
                         }
                         batch_json_data.append(json_data)
@@ -602,43 +755,44 @@ class OntoEmma:
                         if len(batch_json_data) == batch_size:
                             results = predictor.predict_batch_json(batch_json_data, cuda_device)
                             for model_input, output in zip(batch_json_data, results):
-                                if output['predicted_label'] == [1.0]:
-                                    temp_alignments[model_input['source_ent']['research_entity_id']].append(
-                                        (model_input['target_ent']['research_entity_id'], output['score'][0])
-                                    )
+                                sim_scores[(
+                                    model_input['source_ent']['research_entity_id'],
+                                    model_input['target_ent']['research_entity_id']
+                                )] = output['score'][0]
                             batch_json_data = []
+
+                # finish last batch
+                if batch_json_data:
+                    results = predictor.predict_batch_json(batch_json_data, cuda_device)
+                    for model_input, output in zip(batch_json_data, results):
+                        sim_scores[(
+                            model_input['source_ent']['research_entity_id'],
+                            model_input['target_ent']['research_entity_id']
+                        )] = output['score'][0]
         else:
             for s_ent_id in s_ent_tqdm:
                 s_ent = source_kb.get_entity_by_research_entity_id(s_ent_id)
                 for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                     t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                     json_data = {
-                        'source_ent': _form_json_entity(s_ent, source_kb),
-                        'target_ent': _form_json_entity(t_ent, target_kb),
+                        'source_ent': self._form_json_entity_small(s_ent),
+                        'target_ent': self._form_json_entity_small(t_ent),
                         'label': 0
                     }
                     output = predictor.predict_json(json_data, cuda_device)
-                    if output['predicted_label'] == [1.0]:
-                        temp_alignments[json_data['source_ent']['research_entity_id']].append(
-                            (json_data['target_ent']['research_entity_id'],
-                             output['score'][0])
-                        )
+                    sim_scores[(
+                        json_data['source_ent']['research_entity_id'],
+                        json_data['target_ent']['research_entity_id']
+                    )] = output['score'][0]
 
-        alignment = []
-
-        for s_ent_id, matches in temp_alignments.items():
-            if len(matches) > 0:
-                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                if m_sort[0][1] >= constants.NN_SCORE_THRESHOLD:
-                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
-
-        return alignment
+        return sim_scores
 
     def align(self,
               model_type, model_path,
               s_kb_path, t_kb_path,
               gold_path, output_path,
-              cuda_device=-1, missed_path=None):
+              align_strat, cuda_device=-1,
+              missed_path=None):
         """
         Align two input ontologies
         :param model_type: type of model
@@ -647,6 +801,7 @@ class OntoEmma:
         :param t_kb_path: path to target KB
         :param gold_path: path to gold alignment between source and target KBs
         :param output_path: path to write output alignment
+        :param align_strat: strategy for alignment assignment
         :param cuda_device: GPU device number
         :param missed_path: optional parameter for outputting missed alignments
         :return:
@@ -669,11 +824,14 @@ class OntoEmma:
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
 
-        alignment = []
+        similarity_scores = []
         if model_type == 'lr':
-            alignment = self._align_lr(model_path, s_kb, t_kb, cand_sel)
+            similarity_scores = self._align_lr(model_path, s_kb, t_kb, cand_sel)
         elif model_type == 'nn':
-            alignment = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
+            similarity_scores = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
+
+        neighborhood_scores = self._compute_neighborhood_similarities(similarity_scores, s_kb, t_kb)
+        alignment = self._compute_best_alignment(align_strat, similarity_scores, neighborhood_scores, s_kb, t_kb)
 
         if missed_path is None and output_path is not None:
             missed_path = output_path + '.ontoemma.missed'
