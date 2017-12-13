@@ -597,7 +597,78 @@ class OntoEmma:
 
         return alignment, s_remaining, t_remaining
 
-    def _compute_best_alignment(self, align_strat, l_scores, n_scores, s_kb, t_kb):
+    @staticmethod
+    def _apply_best_alignment_strategy(sim_scores):
+        """
+        Use BEST alignment strategy; find best match for each source entity above threshold
+        :param scores:
+        :return:
+        """
+        alignment = []
+
+        # group sim_scores by source entity
+        entity_match_scores = defaultdict(list)
+        for (s_ent_id, t_ent_id), score in sim_scores.items():
+            entity_match_scores[s_ent_id].append((t_ent_id, score))
+
+        # select best match for each source entity
+        for s_ent_id, matches in entity_match_scores.items():
+            if len(matches) > 0:
+                m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
+                if m_sort[0][1] >= constants.SIM_SCORE_THRESHOLD:
+                    alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+
+        return alignment
+
+    @staticmethod
+    def _apply_all_alignment_strategy(sim_scores):
+        """
+        Use ALL alignment strategy; find all matches for each source entity above threshold
+        :param sim_scores:
+        :return:
+        """
+        return [(s_ent_id, t_ent_id, score)
+                for (s_ent_id, t_ent_id), score in sim_scores.items()
+                if score >= constants.SIM_SCORE_THRESHOLD]
+
+    @staticmethod
+    def _apply_modh_alignment_strategy(sim_scores, s_kb, t_kb):
+        """
+        Use MODH alignment strategy: use modified hungarian algorithm to determine best global alignment
+        :param sim_scores
+        :param s_kb
+        :param t_kb
+        :return:
+        """
+        alignment = []
+
+        s_len = len(s_kb.entities)
+        t_len = len(t_kb.entities)
+
+        # create and populate graph adjacency matrix
+        cost_mat = np.ones((s_len, t_len))
+
+        for (s_ent_id, t_ent_id), score in sim_scores.items():
+            s_ind = s_kb.get_entity_index(s_ent_id)
+            t_ind = t_kb.get_entity_index(t_ent_id)
+            cost_mat[s_ind][t_ind] = 1.0 - score
+
+        print("Computing best alignment...")
+        hmod = ModifiedHungarian(cost_mat)
+        indices = hmod.compute()
+        print("Length of assignment: %i" % len(indices))
+
+        for row, column in indices:
+            row_ent_id = s_kb.entities[row].research_entity_id
+            col_ent_id = t_kb.entities[column].research_entity_id
+            score = sim_scores[(row_ent_id, col_ent_id)]
+            if score >= constants.SIM_SCORE_THRESHOLD:
+                alignment.append((s_kb.entities[row].research_entity_id,
+                                  t_kb.entities[column].research_entity_id,
+                                  score))
+        return alignment
+
+    def _compute_alignment(self, align_strat, l_scores, n_scores, s_kb, t_kb):
         """
         Compute best bipartite alignment between s_kb and t_kb based on scores
         :param l_scores: entity similarity scores
@@ -606,79 +677,28 @@ class OntoEmma:
         :param t_kb:
         :return:
         """
-        alignment = []
-
         if align_strat == "best":
-            # keep all alignments about minimum score threshold
-            temp_alignments = defaultdict(list)
-            for (s_ent_id, t_ent_id), score in n_scores.items():
-                temp_alignments[s_ent_id].append((t_ent_id, score))
-
-            # select best match for each source entity
-            for s_ent_id, matches in temp_alignments.items():
-                if len(matches) > 0:
-                    m_sort = sorted(matches, key=lambda p: p[1], reverse=True)
-                    if m_sort[0][1] >= constants.SIM_SCORE_THRESHOLD:
-                        alignment.append((s_ent_id, m_sort[0][0], m_sort[0][1]))
+            return self._apply_best_alignment_strategy(n_scores)
         elif align_strat == "all":
-            # keep all alignments about minimum score threshold
-            temp_alignments = defaultdict(list)
-            for (s_ent_id, t_ent_id), score in n_scores.items():
-                temp_alignments[s_ent_id].append((t_ent_id, score))
-
-            # select all matches for each source entity into alignment
-            for s_ent_id, matches in temp_alignments.items():
-                for m in matches:
-                    if m[1] >= constants.SIM_SCORE_THRESHOLD:
-                        alignment.append((s_ent_id, m[0], m[1]))
+            return self._apply_all_alignment_strategy(n_scores)
         elif align_strat == "modh":
-            s_len = len(s_kb.entities)
-            t_len = len(t_kb.entities)
-
-            # create and populate graph adjacency matrix
-            cost_mat = np.ones((s_len, t_len))
-            print("Initial cost adjacency matrix size")
-            print(cost_mat.shape)
-
-            for (s_ent_id, t_ent_id), score in n_scores.items():
-                s_ind = s_kb.get_entity_index(s_ent_id)
-                t_ind = t_kb.get_entity_index(t_ent_id)
-                cost_mat[s_ind][t_ind] = 1.0 - score
-
-            # TODO: try reducing the mat by getting rid of the perfect matches
-            print("Computing best alignment...")
-            hmod = ModifiedHungarian(cost_mat)
-            indices = hmod.compute()
-            print("Length of assignment: %i" % len(indices))
-
-            total = 0.0
-            for row, column in indices:
-                score = 1.0 - cost_mat[row][column]
-                if score >= constants.SIM_SCORE_THRESHOLD:
-                    print('(%d, %d) -> %.2f' % (row, column, score))
-                    total += score
-                    alignment.append((s_kb.entities[row].research_entity_id,
-                                      t_kb.entities[column].research_entity_id,
-                                      score))
-
-            print('total profit=%.2f' % total)
+            return self._apply_modh_alignment_strategy(n_scores, s_kb, t_kb)
         else:
             raise NotImplementedError("Error: Unknown alignment strategy.")
 
-        return alignment
-
-    def _compute_neighborhood_similarities(self, scores, s_kb, t_kb):
+    def _compute_neighborhood_similarities(self, scores, s_kb, t_kb, iterations=0):
         """
         Compute neighborhood similarities of each pair of entities based on entity similarity scores
         :param scores: Entity similarity scores
         :param s_kb: Source KB
         :param t_kb: Target KB
+        :param iterations: number of iterations for propagating neighborhood similarity
         :return:
         """
         updated_neighborhood_sim = copy(scores)
 
         # iteratively calculate global similarity scores
-        for i in range(0, constants.NEIGHBORHOOD_SIMILARITY_ITERATIONS):
+        for i in range(0, iterations):
             neighborhood_sim = dict()
 
             # iterate through all alignments
@@ -779,7 +799,7 @@ class OntoEmma:
         from emma.allennlp_classes.ontoemma_model import OntoEmmaNN
         from emma.allennlp_classes.ontoemma_predictor import OntoEmmaPredictor
 
-        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb)
+        alignment, s_ent_ids, t_ent_ids = self._align_string_equiv(source_kb, target_kb, candidate_selector)
         sys.stdout.write("%i alignments with string equivalence\n" % len(alignment))
 
         if cuda_device > 0:
@@ -889,7 +909,7 @@ class OntoEmma:
             similarity_scores = self._align_nn(model_path, s_kb, t_kb, cand_sel, cuda_device)
 
         neighborhood_scores = self._compute_neighborhood_similarities(similarity_scores, s_kb, t_kb)
-        alignment = self._compute_best_alignment(align_strat, similarity_scores, neighborhood_scores, s_kb, t_kb)
+        alignment = self._compute_alignment(align_strat, similarity_scores, neighborhood_scores, s_kb, t_kb)
 
         if missed_path is None and output_path is not None:
             missed_path = output_path + '.ontoemma.missed'
@@ -904,7 +924,7 @@ class OntoEmma:
 
         return alignment_scores
 
-    def compare_alignment_to_gold(self, gold_path, alignment, s_kb, t_kb, missed_file):
+    def compare_alignment_to_gold(self, gold_path, alignment, s_kb, t_kb, missed_file=None):
         """
         Make predictions on features and evaluate against gold
         :param gold_path: path to gold alignment file
