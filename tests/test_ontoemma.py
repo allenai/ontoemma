@@ -6,7 +6,7 @@ import unittest
 TEST_DATA = os.path.join('tests', 'data')
 
 
-class TestOntoEmmaAlign(unittest.TestCase):
+class TestOntoEmmaTrainAlign(unittest.TestCase):
 
     def test_nn(self):
         config_file = os.path.join(TEST_DATA, 'test_nn_config_file.json')
@@ -33,7 +33,7 @@ class TestOntoEmmaAlign(unittest.TestCase):
             'nn', model_path,
             source_ont_file, target_ont_file,
             input_alignment_file, output_alignment_file,
-            -1
+            "best", -1
         )
         assert p >= 0.0
         assert r >= 0.0
@@ -63,7 +63,7 @@ class TestOntoEmmaAlign(unittest.TestCase):
             'lr', model_path,
             source_ont_file, target_ont_file,
             input_alignment_file, output_alignment_file,
-            -1
+            "best", -1
         )
 
         assert p >= 0.8
