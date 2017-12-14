@@ -9,8 +9,8 @@ Go to the base git directory and run: `./setup.sh`
 
 This will create an `ontoemma` conda environment and install all required libraries.
 
-## Run OntoEmma (align two KBs)
-To run OntoEmma, use `run_ontoemma.py`. 
+## Run OntoEMMA (align two KBs)
+To run OntoEMMA, use `run_ontoemma.py`. 
 
 For a full description of arguments and usages, run: `python run_ontoemma.py -h`
 
@@ -31,8 +31,8 @@ Example usage:
 
 The above aligns the source and target ontology files using the neural network model given at model_path, using GPU 0. This model specified must be pre-trained.
 
-## Train OntoEmma
-To train an alignment model, use `train_ontoemma.py`. 
+## Train and evaluate OntoEMMA
+To train or evaluate a trained alignment model, use `train_ontoemma.py`. 
 
 For a full description of arguments and usages, run: `python train_ontoemma.py -h`
 
@@ -41,17 +41,26 @@ The wrapper takes the following arguments:
 - -p \<model_type> (lr = logistic regression, nn = neural network)
 - -m \<model_path>
 - -c \<configuration_file>
+- -e 
+- -d \<evaluation\_data\_file>
+- -g \<cuda_device>
 
-Example usage:
+Example usage for training:
 
 `python train_ontoemma.py -p lr -m model_path -c configuration_file.json`
 
 The above trains a logistic regression model over the training data specified in the configuration file.
 
+The -e flag specifies evaluation mode. This evaluates the specified model on an input evaluation data set with the same format as the training data. An example usage for evaluation:
+
+`python train_ontoemma.py -e -p lr -m model_path -d evaluation_data_path`
+
+The above evaluates the specified logistic regression model over the data given in evaluation\_data\_path.
+
 ## Modules
 
-### OntoEmma module
-The module `OntoEmma` is used for accessing the training and alignment capabilities of OntoEmma.
+### OntoEMMA module
+The module `OntoEmma` is used for accessing the training and alignment capabilities of OntoEMMA.
 
 #### Train mode
 In training mode, the `OntoEmma` module can use the `OntoEmmaLRModel` logistic regression module or AllenNLP to train the model
