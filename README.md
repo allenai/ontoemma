@@ -48,6 +48,8 @@ Example usage:
 
 The above trains a logistic regression model over the training data specified in the configuration file.
 
+## Modules
+
 ### OntoEmma module
 The module `OntoEmma` is used for accessing the training and alignment capabilities of OntoEmma.
 
@@ -102,7 +104,7 @@ The module `EngineeredFeatureGenerator` is used to generate features from a cand
 
 The module generates engineered features using the word and character n-gram tokens of entity aliases, definitions, synonyms, and dependancy parse roots. 
 
-### UMLS training data
+### Extracting training data from UMLS
 The module `extract_training_data_from_umls` is used to extract KB and concept mapping data from UMLS for use in ontology matching training and evaluation.
 
 `extract_training_data_from_umls` takes as inputs:
@@ -115,6 +117,8 @@ The module `extract_training_data_from_umls` is used to extract KB and concept m
 - KnowledgeBase objects written to json files in `OUTPUT_DIR/kbs/`. One json object is generated for each KnowledgeBase. Currently, KBs specified in kb_name_list are read from the UMLS subset and converted into KnowledgeBase objects.
 - Pairwise KB mapping files are written to tsv files in `OUTPUT_DIR/mappings/`. Mappings are derived as pairs of raw_ids that are mapped under the same concept ID in UMLS.
 - Negative mappings are sampled from UMLS as negative training data. The full training data including negatives are written to tsv files in `OUTPUT_DIR/training/`.
+
+NOTE: training data does not need to be extracted from UMLS. The user can provide training alignments from whatever source they would like, but it should be formatted as specified above, and both positive and negative alignments should be provided.
 
 #### Sampling negative data
 
