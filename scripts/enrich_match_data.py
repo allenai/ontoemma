@@ -33,7 +33,7 @@ class SynonymEnricher:
         self.mesh_synonyms = pickle.load(open(mesh_syn_file, 'rb'))
         self.dbpedia_synonyms = pickle.load(open(dbpedia_syn_file, 'rb'))
 
-    def add_synonyms_to_entity(self, aliases: List):
+    def get_synonyms_to_entity(self, aliases: List):
         """
         Return synonyms of entity
         :param aliases: entity aliases
@@ -67,27 +67,33 @@ class WikipediaEnricher:
         # Initialize wikipedia queryer
         wikipedia.set_lang('en')
         wikipedia.set_rate_limiting(True, min_wait=datetime.timedelta(0, 0, 2000))
+        self.wiki_summary = dict()
         self.wiki_dict = dict()
 
         self.tokenizer = RegexpTokenizer(r'[A-Za-z\d]+')
         self.STOP = set(stopwords.words('english'))
 
-    @staticmethod
-    def get_summary(query_text: str):
+    def get_summary(self, query_text: str):
         """
         Get summary from hit article
         :param query_text:
         :return:
         """
-        try:
-            return wikipedia.summary(query_text, sentences=1)
-        except DisambiguationError:
+        if query_text is None:
             return ''
-        except PageError:
-            return ''
-        except Exception:
-            print('Unknown exception!')
-            return ''
+        if query_text not in self.wiki_summary:
+            try:
+                self.wiki_summary[query_text] = wikipedia.summary(query_text, sentences=1)
+                return self.wiki_summary[query_text]
+            except DisambiguationError:
+                return ''
+            except PageError:
+                return ''
+            except Exception:
+                print('Unknown exception!')
+                return ''
+        else:
+            return self.wiki_summary[query_text]
 
     def search_term(self, query_text: str):
         """
@@ -95,14 +101,18 @@ class WikipediaEnricher:
         :param query_text:
         :return:
         """
+        if query_text is None:
+            return [], None
         if query_text not in self.wiki_dict:
             try:
                 self.wiki_dict[query_text] = wikipedia.search(query_text, suggestion=True)
+                return self.wiki_dict[query_text]
             except Exception:
-                self.wiki_dict[query_text] = ([], None)
-        return self.wiki_dict[query_text]
+                return [], None
+        else:
+            return self.wiki_dict[query_text]
 
-    def add_definition_to_entity(self, ent_name: str):
+    def get_definition_to_entity(self, ent_name: str):
         """
         Add synonyms to entity
         :param ent:
@@ -123,7 +133,7 @@ class WikipediaEnricher:
             wiki_ents = articles
 
             # get definition from suggested articles if no definition retrieved earlier
-            if len(definition) <= 5 and suggestion:
+            if len(definition) == 0 and suggestion:
                 definition = self.get_summary(suggestion)
         except Exception:
             return wiki_ents, definition
@@ -159,8 +169,8 @@ class DataEnricher:
         :return:
         """
         for ent in tqdm.tqdm(kb.entities, total=len(kb.entities)):
-            mesh_syn, dbp_syn = self.syn_enricher.add_synonyms_to_entity(ent.aliases)
-            wiki_ents, definition = self.wiki_enricher.add_definition_to_entity(ent.canonical_name)
+            mesh_syn, dbp_syn = self.syn_enricher.get_synonyms_to_entity(ent.aliases)
+            wiki_ents, definition = self.wiki_enricher.get_definition_to_entity(ent.canonical_name)
             ent.additional_details['mesh_synonyms'] = mesh_syn
             ent.additional_details['dbpedia_synonyms'] = dbp_syn
             ent.additional_details['wiki_entities'] = wiki_ents
@@ -176,13 +186,13 @@ class DataEnricher:
         :param ent_in_json:
         :return:
         """
-        mesh_syn, dbp_syn = self.syn_enricher.add_synonyms_to_entity(ent_in_json['aliases'])
-        wiki_ents, definition = self.wiki_enricher.add_definition_to_entity(ent_in_json['canonical_name'])
+        mesh_syn, dbp_syn = self.syn_enricher.get_synonyms_to_entity(ent_in_json['aliases'])
+        wiki_ents, definition = self.wiki_enricher.get_definition_to_entity(ent_in_json['canonical_name'])
 
         ent_in_json['mesh_synonyms'] = mesh_syn
         ent_in_json['dbpedia_synonyms'] = dbp_syn
         ent_in_json['wiki_entities'] = wiki_ents
-        if len(ent_in_json['definition']) < 5:
+        if len(ent_in_json['definition']) == 0:
             ent_in_json['definition'] = definition
 
         return ent_in_json
