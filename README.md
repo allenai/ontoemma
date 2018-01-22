@@ -51,6 +51,10 @@ NN with AllenNLP:
 - Train model using AllenNLP; example configuration file given in: `config/example_ontoemma_config.json`
 - Save model to specified serialization directory
 
+Configuration file:
+- Training and validation data are outputs of `extract_training_data_from_umls.py`
+- Enriched training/validation data have been enriched with DBPedia and MeSH terms, and Wikipedia summary sentences, see `scripts/enrich_match_data.py`
+
 When training other models with `OntoEmmaModel`, the module performs the following:
 
 - Load training data from file (training data is extracted from UMLS, see UMLS training data for more information)

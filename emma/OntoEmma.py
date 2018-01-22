@@ -631,7 +631,8 @@ class OntoEmma:
     def _compute_neighborhood_similarities(self, scores, s_kb, t_kb, iterations=0):
         """
         Compute neighborhood similarities of each pair of entities based on entity similarity scores
-        :param scores: Entity similarity scores
+        :param scores: dict of entity similarity scores, key=(s_ent_id, t_ent_id), value=score [0.0, 1.0]
+                        output of _align_lr or _align_nn
         :param s_kb: Source KB
         :param t_kb: Target KB
         :param iterations: number of iterations for propagating neighborhood similarity
@@ -656,12 +657,17 @@ class OntoEmma:
                 # sum regional contributions to similarity
                 neighborhood_sum = 0.0
                 distance_weights = 0.0
+                # TODO: reimplement using dynamic programming algorithm to improve efficiency
                 for s_neighbor_id, t_neighbor_id in itertools.product(s_region, t_region):
+                    # check that distance between neighbor and entity of interest if the same in source and target kbs
                     if len(s_region[s_neighbor_id]) == len(t_region[t_neighbor_id]) and \
                                     (s_neighbor_id, t_neighbor_id) in updated_neighborhood_sim:
+                        # compute weight based on distance
                         d_weight = self._get_distance_weight(s_region[s_neighbor_id], t_region[t_neighbor_id])
                         distance_weights += d_weight
                         neighborhood_sum += d_weight * updated_neighborhood_sim[(s_neighbor_id, t_neighbor_id)]
+
+                # adjust similarity value based on neighborhood; normalize by the distances of the neighbors
                 if distance_weights > 0.0:
                     adjusted_sim_val = neighborhood_sum / distance_weights
                 else:
