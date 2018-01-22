@@ -1,7 +1,7 @@
 {
   "dataset_reader": {
     "type": "ontology_matcher",
-    "name_token_indexers": {
+    "name_token_indexer": {
       "tokens": {
         "type": "single_id",
         "lowercase_tokens": true
@@ -17,89 +17,85 @@
       }
     }
   },
-  "train_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.train",
-  "validation_data_path": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/training/ontoemma.context.dev",
+  "train_data_path": "data/ontoemma.enriched.train",
+  "validation_data_path": "data/ontoemma.enriched.dev",
   "model": {
     "type": "ontoemmaNN",
-    "name_text_field_embedder": {
-            "tokens": {
-                    "type": "embedding",
-                    "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-                    "embedding_dim": 100,
-                    "trainable": false
-            },
-            "token_characters": {
-                    "type": "character_encoding",
-                    "embedding": {
-                      "embedding_dim": 50
-                    },
-                    "encoder": {
-                      "type": "cnn",
-                      "embedding_dim": 50,
-                      "num_filters": 50,
-                      "ngram_filter_sizes": [4, 5]
-                    },
-                    "dropout": 0.2
-            }
-    },
-    "context_text_field_embedder": {
+    "name_embedder": {
       "tokens": {
         "type": "embedding",
-        "pretrained_file": "/net/nfs.corp/s2-research/scigraph/data/ontoemma/embeddings/weights100.txt.gz",
-        "embedding_dim": 100,
+        "pretrained_file": "data/embeddings/weights300.txt.gz",
+        "embedding_dim": 300,
+        "trainable": false
+      },
+      "token_characters": {
+        "type": "character_encoding",
+        "embedding": {
+          "embedding_dim": 100
+        },
+        "encoder": {
+          "type": "cnn",
+          "embedding_dim": 100,
+          "num_filters": 50,
+          "ngram_filter_sizes": [4, 5]
+        },
+        "dropout": 0.2
+      }
+    },
+    "definition_embedder": {
+      "tokens": {
+        "type": "embedding",
+        "pretrained_file": "data/embeddings/weights300.txt.gz",
+        "embedding_dim": 300,
         "trainable": false
       }
     },
-    "name_rnn_encoder": {
-      "type": "rnn",
-      "input_size": 200,
-      "hidden_size": 50,
+    "name_encoder": {
+      "type": "lstm",
+      "input_size": 400,
+      "hidden_size": 100,
       "num_layers": 2,
       "dropout": 0.2,
       "bidirectional": true
     },
-    "name_boe_encoder": {
-      "type": "boe",
-      "embedding_dim": 100,
-      "averaged": true
-    },
-    "context_encoder": {
-      "type": "boe",
-      "embedding_dim": 100,
-      "averaged": true
+    "definition_encoder": {
+      "type": "lstm",
+      "input_size": 300,
+      "hidden_size": 100,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "bidirectional": true
     },
     "siamese_feedforward": {
-      "input_dim": 400,
+      "input_dim": 600,
       "num_layers": 2,
       "hidden_dims": 100,
       "activations": "relu",
       "dropout": 0.2
     },
     "decision_feedforward": {
-      "input_dim": 229,
-      "num_layers": 4,
-      "hidden_dims": [200, 200, 100, 1],
-      "activations": ["relu", "relu", "relu", "linear"],
-      "dropout": [0.2, 0.2, 0.2, 0.0]
+      "input_dim": 232,
+      "num_layers": 2,
+      "hidden_dims": [232, 1],
+      "activations": ["relu", "linear"],
+      "dropout": [0.2, 0.0]
     },
     "initializer": [
       [".*linear_layers.*weight", {"type": "xavier_normal"}],
-      [".*embedder.*weight", {"type": "xavier_normal"}],
       [".*encoder.*module.*weight.*", {"type": "orthogonal"}]
      ]
   },
   "iterator": {
     "type": "bucket",
     "sorting_keys": [
-                    ["s_ent_context", "list_num_tokens"],
-                    ["t_ent_context", "list_num_tokens"],
                     ["s_ent_def", "num_tokens"],
                     ["t_ent_def", "num_tokens"],
-                    ["s_ent_aliases", "list_num_tokens"],
-                    ["t_ent_aliases", "list_num_tokens"],
+                    ["s_ent_alias", "list_num_tokens"],
+                    ["t_ent_alias", "list_num_tokens"],
                     ["s_ent_name", "num_tokens"],
                     ["t_ent_name", "num_tokens"]
-    ]
+    ],
+    "batch_size": 32
   },
   "trainer": {
     "optimizer": "adam",

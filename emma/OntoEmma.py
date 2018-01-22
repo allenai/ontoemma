@@ -14,11 +14,12 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
 from emma.OntoEmmaLRModel import OntoEmmaLRModel
-from emma.kb.kb_utils_refactor import KnowledgeBase
+from emma.kb.kb_utils_refactor import KBEntity, KnowledgeBase
 from emma.kb.kb_load_refactor import KBLoader
 from emma.CandidateSelection import CandidateSelection
-from emma.FeatureGeneratorLR import FeatureGeneratorLR
+from emma.EngineeredFeatureGenerator import EngineeredFeatureGenerator
 from emma.paths import StandardFilePath
+import emma.utils.string_utils as string_utils
 import emma.constants as constants
 
 from allennlp.commands.train import train_model_from_file
@@ -190,15 +191,14 @@ class OntoEmma:
                 labels.append(obj['label'])
         return pairs, labels
 
-    def _train_lr(self, model_path: str, config_file: str):
+    def _apply_model_train(self, model, model_path, config_file):
         """
-        Train a logistic regression model
+        Apply loaded model to config_file data and save
+        :param model:
         :param model_path:
         :param config_file:
         :return:
         """
-        model = OntoEmmaLRModel()
-
         # read model config
         with open(config_file, 'r') as f:
             config = json.load(f)
@@ -212,21 +212,24 @@ class OntoEmma:
         dev_pairs, dev_labels = self._alignments_to_pairs_and_labels(dev_data_path)
 
         sys.stdout.write('Training data size: %i\n' % len(training_labels))
-        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for training pairs
-        feat_gen_train = FeatureGeneratorLR([item for sublist in training_pairs for item in sublist])
-        training_features = [
-            feat_gen_train.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            for s_ent, t_ent in training_pairs
-        ]
+        feat_gen_train = EngineeredFeatureGenerator()
+        training_features = []
+        for s_ent, t_ent in tqdm.tqdm(training_pairs, total=len(training_pairs)):
+            training_features.append(
+                feat_gen_train.calculate_features(s_ent, t_ent)
+            )
+
+        sys.stdout.write('Development data size: %i\n' % len(dev_labels))
 
         # generate features for development pairs
-        feat_gen_dev = FeatureGeneratorLR([item for sublist in dev_pairs for item in sublist])
-        dev_features = [
-            feat_gen_dev.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
-            for s_ent, t_ent in dev_pairs
-        ]
+        feat_gen_dev = EngineeredFeatureGenerator()
+        dev_features = []
+        for s_ent, t_ent in tqdm.tqdm(dev_pairs, total=len(dev_pairs)):
+            dev_features.append(
+                feat_gen_dev.calculate_features(s_ent, t_ent)
+            )
 
         model.train(training_features, training_labels)
 
@@ -241,6 +244,17 @@ class OntoEmma:
         )
 
         model.save(model_path)
+        return
+
+    def _train_lr(self, model_path: str, config_file: str):
+        """
+        Train a logistic regression model
+        :param model_path:
+        :param config_file:
+        :return:
+        """
+        model = OntoEmmaLRModel()
+        self._apply_model_train(model, model_path, config_file)
         return
 
     def _train_nn(self, model_path: str, config_file: str):
@@ -304,9 +318,9 @@ class OntoEmma:
         eval_pairs, eval_labels = self._alignments_to_pairs_and_labels(evaluation_data_file)
 
         # initialize feature generator
-        feat_gen = FeatureGeneratorLR([item for sublist in eval_pairs for item in sublist])
+        feat_gen = EngineeredFeatureGenerator()
         eval_features = [
-            feat_gen.calculate_features(s_ent['research_entity_id'], t_ent['research_entity_id'])
+            feat_gen.calculate_features(s_ent, t_ent)
             for s_ent, t_ent in eval_pairs
         ]
 
@@ -406,37 +420,9 @@ class OntoEmma:
         :return:
         """
 
-        # returns json representation of entity that matches what feature generator expects
-        def _form_json_entity(ent, kb):
-            parent_ids = [kb.relations[rel_id].entity_ids[1]
-                          for rel_id in ent.relation_ids
-                          if kb.relations[rel_id].relation_type in constants.UMLS_PARENT_REL_LABELS]
-
-            child_ids = [kb.relations[rel_id].entity_ids[1]
-                         for rel_id in ent.relation_ids
-                         if kb.relations[rel_id].relation_type in constants.UMLS_CHILD_REL_LABELS]
-
-            parents = [kb.get_entity_by_research_entity_id(i).canonical_name
-                       for i in parent_ids if i in kb.research_entity_id_to_entity_index]
-
-            children = [kb.get_entity_by_research_entity_id(i).canonical_name
-                        for i in child_ids if i in kb.research_entity_id_to_entity_index]
-
-            return {
-                'research_entity_id': ent.research_entity_id,
-                'canonical_name': ent.canonical_name,
-                'aliases': ent.aliases,
-                'definition': ent.definition,
-                'par_relations': parents,
-                'chd_relations': children
-            }
-
         alignment = []
 
-        feature_generator = FeatureGeneratorLR(
-            [_form_json_entity(ent, source_kb) for ent in source_kb.entities] +
-            [_form_json_entity(ent, target_kb) for ent in target_kb.entities]
-        )
+        feature_generator = EngineeredFeatureGenerator()
 
         sys.stdout.write("Loading model...\n")
         model = OntoEmmaLRModel()
@@ -450,7 +436,11 @@ class OntoEmma:
             for t_ent_id in candidate_selector.select_candidates(
                     s_ent_id
             )[:constants.KEEP_TOP_K_CANDIDATES]:
-                features = [feature_generator.calculate_features(s_ent_id, t_ent_id)]
+                t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
+                features = [feature_generator.calculate_features(
+                    source_kb.form_json_entity(s_ent),
+                    target_kb.form_json_entity(t_ent)
+                )]
                 score = model.predict_entity_pair(features)
                 if score[0][1] >= constants.LR_SCORE_THRESHOLD:
                     alignment.append((s_ent_id, t_ent_id, score[0][1]))
@@ -671,6 +661,10 @@ class OntoEmma:
         sys.stdout.write("Loading KBs...\n")
         s_kb = self.load_kb(s_kb_path)
         t_kb = self.load_kb(t_kb_path)
+
+        sys.stdout.write("Normalizing KBs...\n")
+        s_kb.normalize_kb()
+        t_kb.normalize_kb()
 
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
