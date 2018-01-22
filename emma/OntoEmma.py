@@ -41,7 +41,7 @@ class OntoEmma:
         paths = StandardFilePath()
 
     @staticmethod
-    def load_kb(kb_path):
+    def load_kb(kb_path) -> KnowledgeBase:
         """
         Load KnowledgeBase specified at kb_path
         :param kb_path: path to knowledge base
@@ -714,8 +714,8 @@ class OntoEmma:
                     t_ent = t_kb.get_entity_by_research_entity_id(t_ent_id)
                     if t_ent.canonical_name == t_ent_id:
                         continue
-                    features = [feat_gen.calculate_features(self._form_json_entity(s_ent, s_kb),
-                                                            self._form_json_entity(t_ent, t_kb))]
+                    features = [feat_gen.calculate_features(s_kb.form_json_entity(s_ent),
+                                                            t_kb.form_json_entity(t_ent))]
                     score = model.predict_entity_pair(features)
                     sim_scores[(s_ent_id, t_ent_id)] = score[0][1]
 
@@ -772,8 +772,8 @@ class OntoEmma:
                     for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                         t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                         json_data = {
-                            'source_ent': self._form_json_entity_small(s_ent),
-                            'target_ent': self._form_json_entity_small(t_ent),
+                            'source_ent': s_ent.form_json(),
+                            'target_ent': t_ent.form_json(),
                             'label': 0
                         }
                         batch_json_data.append(json_data)
@@ -801,8 +801,8 @@ class OntoEmma:
                 for t_ent_id in candidate_selector.select_candidates(s_ent_id)[:constants.KEEP_TOP_K_CANDIDATES]:
                     t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                     json_data = {
-                        'source_ent': self._form_json_entity_small(s_ent),
-                        'target_ent': self._form_json_entity_small(t_ent),
+                        'source_ent': s_ent.form_json(),
+                        'target_ent': t_ent.form_json(),
                         'label': 0
                     }
                     output = predictor.predict_json(json_data, cuda_device)
