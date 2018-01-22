@@ -25,11 +25,12 @@ class TestAssignmentStrategies(unittest.TestCase):
         target_ont_file = os.path.join(TEST_DATA, 'test_target_ont.json')
 
         ontoemma = OntoEmma()
-        s_kb = ontoemma._normalize_kb(
-            ontoemma.load_kb(source_ont_file)
-        )
-        t_kb = ontoemma._normalize_kb(
-            ontoemma.load_kb(target_ont_file)
-        )
+
+        s_kb = ontoemma.load_kb(source_ont_file)
+        s_kb.normalize_kb()
+
+        t_kb = ontoemma.load_kb(target_ont_file)
+        t_kb.normalize_kb()
+
         alignment = self.ontoemma._apply_modh_alignment_strategy(self.sim_scores, s_kb, t_kb)
         assert len(alignment) == 6
