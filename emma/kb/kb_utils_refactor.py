@@ -1,18 +1,14 @@
 import os
-import sys
 import json
-import string
 import logging
 import tqdm
-import rdflib
 
 from collections import defaultdict
-from lxml import etree
 
 from emma.utils import file_util
-from emma.utils.string_utils import canonicalize
 from emma.utils.common import global_tokenizer
-
+import emma.utils.string_utils as string_utils
+import emma.constants as constants
 
 # a lightweight class to represent an entity with a unified schema.
 class KBEntity(object):
@@ -75,7 +71,7 @@ class KBEntity(object):
         return entity
 
     def entity_names(self):
-        return set([canonicalize(n) for n in self.aliases])
+        return set([string_utils.canonicalize(n) for n in self.aliases])
 
     def tokenize_properties(self):
         if self.tokenized_definition is None:
@@ -108,6 +104,22 @@ class KBEntity(object):
                 pass
             else:
                 pass
+
+    def form_json(self):
+        """
+        Forms json representation of entity without relations
+        :return:
+        """
+        return {
+            'research_entity_id': self.research_entity_id,
+            'canonical_name': self.canonical_name,
+            'aliases': self.aliases,
+            'definition': self.definition,
+            'other_contexts': self.other_contexts,
+            'wiki_entities': self.additional_details['wiki_entities'],
+            'mesh_synonyms': self.additional_details['mesh_synonyms'],
+            'dbpedia_synonyms': self.additional_details['dbpedia_synonyms']
+        }
 
 
 # a lightweight class to represent a relation with a unified schema.
@@ -185,6 +197,71 @@ class KnowledgeBase(object):
             self.entity_ids_to_relation_index[tuple(relation.entity_ids)
                                              ].add(rel_index)
         return
+
+    def normalize_kb(self):
+        """
+        Normalize all strings in kb
+        :param kb:
+        :return:
+        """
+        for ent in self.entities:
+            ent.canonical_name = string_utils.normalize_string(ent.canonical_name)
+            ent.aliases = [string_utils.normalize_string(a) for a in ent.aliases]
+            ent.definition = string_utils.normalize_string(ent.definition)
+
+            ent.additional_details['wiki_entities'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['wiki_entities']
+            ] if 'wiki_entities' in ent.additional_details else []
+
+            ent.additional_details['mesh_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['mesh_synonynms']
+            ] if 'mesh_synonynms' in ent.additional_details else []
+
+            ent.additional_details['dbpedia_synonyms'] = [
+                string_utils.normalize_string(i) for i in ent.additional_details['dbpedia_synonyms']
+            ] if 'dbpedia_synonyms' in ent.additional_details else []
+
+            all_rels = [self.relations[r_id] for r_id in ent.relation_ids]
+            par_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
+            ]
+            chd_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
+            ]
+            sib_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SIBLING_REL_LABELS
+            ]
+            syn_ents = [
+                r.entity_ids[1] for r in all_rels
+                if r.relation_type in constants.UMLS_SYNONYM_REL_LABELS
+            ]
+
+            ent.additional_details['par_relations'] = list(set(par_ents))
+            ent.additional_details['chd_relations'] = list(set(chd_ents))
+            ent.additional_details['sib_relations'] = list(set(sib_ents))
+            ent.additional_details['syn_relations'] = list(set(syn_ents))
+
+        return
+
+    def form_json_entity(self, ent_to_json: KBEntity):
+        """
+        Forms json representation of entity from kb
+        :param ent_to_json:
+        :return:
+        """
+        json_ent = ent_to_json.form_json()
+        json_ent['par_relations'] = [self.get_entity_by_research_entity_id(e).form_json()
+                                     for e in ent_to_json.additional_details['par_relations'] if e is not None]
+        json_ent['chd_relations'] = [self.get_entity_by_research_entity_id(e).form_json()
+                                     for e in ent_to_json.additional_details['chd_relations'] if e is not None]
+        json_ent['sib_relations'] = [self.get_entity_by_research_entity_id(e).form_json()
+                                     for e in ent_to_json.additional_details['sib_relations'] if e is not None]
+        json_ent['syn_relations'] = [self.get_entity_by_research_entity_id(e).form_json()
+                                     for e in ent_to_json.additional_details['syn_relations'] if e is not None]
+        return json_ent
 
     def add_null_entity(self):
         if self.null_entity is None:

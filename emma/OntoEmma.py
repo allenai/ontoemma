@@ -191,100 +191,6 @@ class OntoEmma:
                 labels.append(obj['label'])
         return pairs, labels
 
-    @staticmethod
-    def _normalize_kb(kb):
-        """
-        Normalize all strings in kb
-        :param kb:
-        :return:
-        """
-        for ent in kb.entities:
-            ent.canonical_name = string_utils.normalize_string(ent.canonical_name)
-            ent.aliases = [string_utils.normalize_string(a) for a in ent.aliases]
-            ent.definition = string_utils.normalize_string(ent.definition)
-
-            ent.additional_details['wiki_entities'] = [
-                string_utils.normalize_string(i) for i in ent.additional_details['wiki_entities']
-            ] if 'wiki_entities' in ent.additional_details else []
-
-            ent.additional_details['mesh_synonyms'] = [
-                string_utils.normalize_string(i) for i in ent.additional_details['mesh_synonynms']
-            ] if 'mesh_synonynms' in ent.additional_details else []
-
-            ent.additional_details['dbpedia_synonyms'] = [
-                string_utils.normalize_string(i) for i in ent.additional_details['dbpedia_synonyms']
-            ] if 'dbpedia_synonyms' in ent.additional_details else []
-
-            all_rels = [kb.relations[r_id] for r_id in ent.relation_ids]
-            par_ents = [
-                r.entity_ids[1] for r in all_rels
-                if r.relation_type in constants.UMLS_PARENT_REL_LABELS
-            ]
-            chd_ents = [
-                r.entity_ids[1] for r in all_rels
-                if r.relation_type in constants.UMLS_CHILD_REL_LABELS
-            ]
-            sib_ents = [
-                r.entity_ids[1] for r in all_rels
-                if r.relation_type in constants.UMLS_SIBLING_REL_LABELS
-            ]
-            syn_ents = [
-                r.entity_ids[1] for r in all_rels
-                if r.relation_type in constants.UMLS_SYNONYM_REL_LABELS
-            ]
-
-            ent.additional_details['par_relations'] = list(set(par_ents))
-            ent.additional_details['chd_relations'] = list(set(chd_ents))
-            ent.additional_details['sib_relations'] = list(set(sib_ents))
-            ent.additional_details['syn_relations'] = list(set(syn_ents))
-
-        return kb
-
-    @staticmethod
-    def _form_json_entity_small(ent_to_json: KBEntity):
-        """
-        Forms json representation of entity from kb without relations
-        :param ent_to_json:
-        :param kb:
-        :return:
-        """
-        return {
-            'research_entity_id': ent_to_json.research_entity_id,
-            'canonical_name': ent_to_json.canonical_name,
-            'aliases': ent_to_json.aliases,
-            'definition': ent_to_json.definition,
-            'other_contexts': ent_to_json.other_contexts,
-            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
-            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
-            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms']
-        }
-
-    def _form_json_entity(self, ent_to_json: KBEntity, kb: KnowledgeBase):
-        """
-        Forms json representation of entity from kb
-        :param ent_to_json:
-        :param kb:
-        :return:
-        """
-        return {
-            'research_entity_id': ent_to_json.research_entity_id,
-            'canonical_name': ent_to_json.canonical_name,
-            'aliases': ent_to_json.aliases,
-            'definition': ent_to_json.definition,
-            'other_contexts': ent_to_json.other_contexts,
-            'wiki_entities': ent_to_json.additional_details['wiki_entities'],
-            'mesh_synonyms': ent_to_json.additional_details['mesh_synonyms'],
-            'dbpedia_synonyms': ent_to_json.additional_details['dbpedia_synonyms'],
-            'par_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
-                              for e in ent_to_json.additional_details['par_relations'] if e is not None],
-            'chd_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
-                              for e in ent_to_json.additional_details['chd_relations'] if e is not None],
-            'sib_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
-                              for e in ent_to_json.additional_details['sib_relations'] if e is not None],
-            'syn_relations': [self._form_json_entity_small(kb.get_entity_by_research_entity_id(e))
-                              for e in ent_to_json.additional_details['syn_relations'] if e is not None]
-        }
-
     def _apply_model_train(self, model, model_path, config_file):
         """
         Apply loaded model to config_file data and save
@@ -532,8 +438,8 @@ class OntoEmma:
             )[:constants.KEEP_TOP_K_CANDIDATES]:
                 t_ent = target_kb.get_entity_by_research_entity_id(t_ent_id)
                 features = [feature_generator.calculate_features(
-                    self._form_json_entity(s_ent, source_kb),
-                    self._form_json_entity(t_ent, target_kb)
+                    source_kb.form_json_entity(s_ent),
+                    target_kb.form_json_entity(t_ent)
                 )]
                 score = model.predict_entity_pair(features)
                 if score[0][1] >= constants.LR_SCORE_THRESHOLD:
@@ -757,8 +663,8 @@ class OntoEmma:
         t_kb = self.load_kb(t_kb_path)
 
         sys.stdout.write("Normalizing KBs...\n")
-        s_kb = self._normalize_kb(s_kb)
-        t_kb = self._normalize_kb(t_kb)
+        s_kb.normalize_kb()
+        t_kb.normalize_kb()
 
         sys.stdout.write("Building candidate indices...\n")
         cand_sel = CandidateSelection(s_kb, t_kb)
