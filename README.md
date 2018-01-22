@@ -1,4 +1,3 @@
-
 # OntoEMMA ontology matcher
 
 This ontology matcher can be used to generate alignments between knowledgebases.
