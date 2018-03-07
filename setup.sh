@@ -2,18 +2,18 @@
 
 CONDAENV=ontoemma
 
+# Install conda
 if ! (which conda); then
-	echo "No `conda` installation found.  Installing..."
-	if [[ $(uname) == "Darwin" ]]; then
-	  wget --continue http://repo.continuum.io/archive/Anaconda3-4.3.1-MacOSX-x86_64.sh
-	  bash Anaconda3-4.3.1-MacOSX-x86_64.sh -b
-	else
-	  wget --continue http://repo.continuum.io/archive/Anaconda3-4.3.1-Linux-x86_64.sh
-	  bash Anaconda3-4.3.1-Linux-x86_64.sh -b
-	fi
+  echo "No conda installation found.  Installing..."
+  if [[ $(uname) == "Darwin" ]]; then
+    wget -nc --continue https://repo.continuum.io/miniconda/Miniconda-3.5.5-MacOSX-x86_64.sh
+    bash Miniconda-3.5.5-MacOSX-x86_64.sh -b || true
+  else
+    wget -nc --continue https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh -b || true
+  fi
+  export PATH=$HOME/miniconda/bin:$HOME/miniconda3/bin:$PATH
 fi
-
-export PATH=$HOME/anaconda3/bin:$PATH
 
 source ~/anaconda3/bin/deactivate ${CONDAENV}
 
@@ -27,9 +27,9 @@ source ~/anaconda3/bin/activate ${CONDAENV}
 pip install -r requirements.txt
 
 if [[ $(uname) == "Darwin" ]]; then
-  conda install pytorch torchvision -c soumith
+  conda install -y pytorch torchvision -c soumith
 else
-  conda install pytorch torchvision cuda80 -c soumith
+  conda install -y pytorch torchvision cuda80 -c soumith
 fi
 
 python -m spacy download en
