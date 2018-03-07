@@ -15,7 +15,7 @@ if ! (which conda); then
   export PATH=$HOME/miniconda/bin:$HOME/miniconda3/bin:$PATH
 fi
 
-source ~/anaconda3/bin/deactivate ${CONDAENV}
+source ~/miniconda3/bin/deactivate ${CONDAENV}
 
 conda remove -y --name ${CONDAENV} --all
 
