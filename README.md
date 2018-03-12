@@ -1,4 +1,3 @@
-
 # OntoEMMA ontology matcher
 
 This ontology matcher can be used to generate alignments between knowledgebases.
@@ -50,6 +49,10 @@ NN with AllenNLP:
 - Training data is formatted according to [Data format: OntoEmma training data](https://docs.google.com/a/allenai.org/document/d/1t8cwpTRqcscFEZOQJrtTMAhjAYzlA_demc9GCY0xYaU/edit?usp=sharing)
 - Train model using AllenNLP; example configuration file given in: `config/example_ontoemma_config.json`
 - Save model to specified serialization directory
+
+Configuration file:
+- Training and validation data are outputs of `extract_training_data_from_umls.py`
+- Enriched training/validation data have been enriched with DBPedia and MeSH terms, and Wikipedia summary sentences, see `scripts/enrich_match_data.py`
 
 When training other models with `OntoEmmaModel`, the module performs the following:
 

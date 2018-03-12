@@ -6,9 +6,13 @@ import numpy as np
 IMPLEMENTED_MODEL_TYPES = {"nn": "Neural Network",
                            "lr": "Logistic Regression"}
 
+# Accepted alignment selection strategies
+IMPLEMENTED_ALIGNMENT_STRATEGY = {"best": "Select the best match for each source entity above threshold",
+                                  "all": "Select all matches for each entity above threshold",
+                                  "modh": "Modified Hungarian algorithm for assignment"}
+
 # Score threshold for positive alignment
-LR_SCORE_THRESHOLD = 0.50
-NN_SCORE_THRESHOLD = 0.95
+SIM_SCORE_THRESHOLD = 0.90
 
 # Minimum size for training data
 MIN_TRAINING_SET_SIZE = 10
@@ -43,5 +47,21 @@ UMLS_PARENT_REL_LABELS = ['RB', 'PAR', 'Is a', 'Part of', 'subClassOf', 'is_a', 
 UMLS_CHILD_REL_LABELS = ['RN', 'CHD', 'Has part', 'subClass', 'has_part']
 UMLS_SIBLING_REL_LABELS = ['SIB', 'RO']
 
+# symmetric relations
+SYMMETRIC_RELATIONS = {'PAR': 'CHD',
+                       'CHD': 'PAR',
+                       'RN': 'RB',
+                       'RB': 'RN',
+                       'subClassOf': 'subClass',
+                       'subClass': 'subClassOf',
+                       'part_of': 'has_part',
+                       'has_part': 'part_of'}
+
 # number of steps for generating regional graph
 NUM_STEPS_FOR_KB_REGION = 5
+
+# steps to generate neighborhood
+NEIGHBORHOOD_GENERATION_STEPS = 2
+
+# number of best candidates to keep per ent for modified hungarian algorithm
+MODH_KEEP_TOP_N_CANDIDATES = 10
