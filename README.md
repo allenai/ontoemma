@@ -158,6 +158,9 @@ Mapping files are of the format described in [Data format: KB alignment file](ht
 ## Downloads
 Labeled data extracted from the UMLS metathesaurus is available [here](http://llwang.net/data/ontoemma/)
 
+## Human Annotations
+Available [here](https://docs.google.com/spreadsheets/u/1/d/e/2PACX-1vTsmTqHl6AusMLLXLIUGEYPNvCx_2_57dOEHSlaR9idrKDunlM0GwVHBlLUeQ0Tbq_15cthQ4GLHl4r/pubhtml#)
+
 ### Other
 
 String processing utilities are found in `string_utils.py`.
