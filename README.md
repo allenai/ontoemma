@@ -155,6 +155,9 @@ Mapping files are of the format described in [Data format: KB alignment file](ht
 `CPT:83937		DRUGBANK:DB00426	0	UMLS2017AA`
 `CPT:1014233		DRUGBANK:DB05907	0	UMLS2017AA`
 
+## Downloads
+Labeled data extracted from the UMLS metathesaurus is available [here](http://llwang.net/data/ontoemma/)
+
 ### Other
 
 String processing utilities are found in `string_utils.py`.
