@@ -31,10 +31,25 @@ NUM_HARD_NEGATIVE_PER_POSITIVE = 1
 NUM_EASY_NEGATIVE_PER_POSITIVE = 1
 
 # training KB names
-TRAINING_KBS = ['CPT', 'GO', 'HGNC', 'HPO', 'MSH', 'OMIM', 'RXNORM']
+TRAINING_KBS = [
+    'CPT',
+    'FMA',
+    'GO',
+    'HGNC',
+    'HPO',
+    'MSH',
+    'NCI',
+    'OMIM',
+    'RXNORM',
+    'SNOMEDCT_US'
+]
 
-# development KB names
-DEVELOPMENT_KBS = ['DRUGBANK', 'HL7V3.0', 'ICD10CM', 'LNC']
+DEVELOPMENT_KBS = [
+    'DRUGBANK',
+    'HL7V3.0',
+    'ICD10CM',
+    'LNC'
+]
 
 # training, development, and test split
 TRAINING_PART = 0.6

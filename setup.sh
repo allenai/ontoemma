@@ -19,7 +19,7 @@ source ~/miniconda3/bin/deactivate ${CONDAENV}
 
 conda remove -y --name ${CONDAENV} --all
 
-conda create -n ${CONDAENV} -y python==3.6 pip pytest || true
+conda create -n ${CONDAENV} -y python=3.6 pip pytest || true
 
 echo "Activating Conda Environment ----->"
 source ~/miniconda3/bin/activate ${CONDAENV}
@@ -35,4 +35,3 @@ fi
 python -m spacy download en
 
 python setup.py develop
-
