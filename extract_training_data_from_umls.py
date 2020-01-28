@@ -40,7 +40,13 @@ class UMLSExtractor(App):
     OUTPUT_DIR = paths.ontoemma_umls_output_dir
     OUTPUT_KB_DIR = paths.ontoemma_kb_dir
     TRAINING_DIR = paths.ontoemma_training_dir
-    CONTEXT_DIR = os.path.join(paths.ontoemma_root_dir, 'kb_context')
+    CONTEXT_DIR = paths.ontoemma_kb_context_dir
+
+    os.makedirs(UMLS_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_KB_DIR, exist_ok=True)
+    os.makedirs(TRAINING_DIR, exist_ok=True)
+    os.makedirs(CONTEXT_DIR, exist_ok=True)
 
     # name sort order (by preferred name status)
     TTY_sort_order = {"MH": 0, "NM": 0,           # main heading, supplementary concept name
@@ -596,10 +602,12 @@ class UMLSExtractor(App):
             context_path = os.path.join(self.CONTEXT_DIR, '{}-contexts.pickle'.format(kb.name))
             output_path = os.path.join(self.OUTPUT_KB_DIR, 'kb-{}-context.json'.format(kb.name))
 
-            sys.stdout.write("Loading context dict\n")
-            context_dict = pickle.load(open(context_path, 'rb'))
-
-            sys.stdout.write("Adding context to entities\n")
+            if not os.path.exists(context_path):
+                print(f'No context for {kb.name}, skipping...')
+                context_dict = {}
+            else:
+                sys.stdout.write("Loading context dict\n")
+                context_dict = pickle.load(open(context_path, 'rb'))
 
             counter = 0
             for ent_name, contexts in context_dict.items():

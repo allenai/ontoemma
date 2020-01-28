@@ -1,71 +1,66 @@
 import os
 
-INIT_DIR = '/net/nfs.corp/s2-research/scigraph/data/'
+
+# CHANGE to reflect your paths
+UMLS_META_PATH = 'data/umls/2017AA/META/'
+S2_CONTEXT_PATH = 'data/kb_contexts/'
 
 class StandardFilePath(object):
-    ontoemma_root = 'ontoemma'
-    ontoemma_kb_dir = 'kbs'
-    ontoemma_missed_file = 'missed.tsv'
-    ontoemma_umls_subset_root = '2017AA_OntoEmma/2017AA/META'
-    ontoemma_umls_output_root = 'umls_output'
-    ontoemma_training_root = 'training'
-    ontoemma_model_root = 'models'
-    ontoemma_output_root = 'output'
-    ontoemma_missed_fname = 'missed.tsv'
-
-    def __init__(self, base_dir=INIT_DIR):
-        """Set self.base_dir.
-        """
-        self.base_dir = base_dir
+    def __init__(self):
+        return
 
     @property
     def ontoemma_root_dir(self):
-        return os.path.join(self.base_dir, self.ontoemma_root)
+        return os.getcwd()
 
     @property
-    def ontoemma_umls_subset_dir(self):
-        return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_umls_subset_root
-        )
-
-    @property
-    def ontoemma_umls_output_dir(self):
-        return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_umls_output_root
-        )
+    def ontoemma_data_dir(self):
+        return 'data'
 
     @property
     def ontoemma_kb_dir(self):
         return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_umls_output_root, 'kbs'
+            self.ontoemma_data_dir, 'kbs'
+        )
+
+    @property
+    def ontoemma_syn_dir(self):
+        return os.path.join(
+            self.ontoemma_data_dir, 'synonyms'
         )
 
     @property
     def ontoemma_training_dir(self):
         return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_training_root
+            self.ontoemma_data_dir, 'training'
         )
+
+    @property
+    def ontoemma_umls_subset_dir(self):
+        return UMLS_META_PATH
+
+    @property
+    def ontoemma_umls_output_dir(self):
+        return os.path.join(
+            self.ontoemma_data_dir, 'umls_output'
+        )
+
+    @property
+    def ontoemma_kb_context_dir(self):
+        return S2_CONTEXT_PATH
 
     @property
     def ontoemma_model_dir(self):
-        return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_model_root
-        )
+        return 'models'
 
     @property
     def ontoemma_output_dir(self):
-        return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_output_root
-        )
+        return 'output'
 
     @property
     def ontoemma_missed_file(self):
         return os.path.join(
-            self.ontoemma_root_dir, self.ontoemma_output_root, self.ontoemma_missed_fname
+            self.ontoemma_output_dir, 'missed.tsv'
         )
 
-    @property
-    def ontoemma_synonym_dir(self):
-        return os.path.join(
-            self.ontoemma_model_dir, 'other_data'
-        )
+
