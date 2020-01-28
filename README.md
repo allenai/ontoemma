@@ -8,23 +8,6 @@ Go to the base git directory and run: `./setup.sh`
 
 This will create an `ontoemma` conda environment and install all required libraries.
 
-## Run OntoEmma (align two KBs)
-To run OntoEmma, use `run_ontoemma.py`. The wrapper implements the following arguments:
-
-- -p \<model_type> (lr = logistic regression, nn = neural network)
-- -m \<model_path>
-- -s \<source_ont> 
-- -t \<target_ont>
-- -i \<input_alignment>
-- -o \<output_file>
-- -g \<cuda_device>
-
-Example usage: 
-
-`python run_ontoemma.py -p nn -m model_path -s source_ont.owl -t target_ont.owl -i input_alignment.tsv -o output_alignment.tsv -g 0`
-
-This script assumes that the model has been pre-trained, and uses *align* functions in `OntoEmma.py` accordingly.
-
 ## Train OntoEmma
 To train an alignment model, use `train_ontoemma.py`. The wrapper takes the following arguments:
 
@@ -142,6 +125,17 @@ UMLS data subsets are currently located at `/net/nfs.corp/s2-research/scigraph/d
 - Pairwise KB mapping files are written to tsv files in `OUTPUT_DIR/mappings/`. Mappings are derived as pairs of raw_ids that are mapped under the same concept ID in UMLS.
 - Negative mappings are sampled from UMLS as negative training data. The full training data including negatives are written to tsv files in `OUTPUT_DIR/training/`.
 
+#### Data downloads
+You will need to download a copy of the UMLS Metathesaurus by following these instructions: [https://www.nlm.nih.gov/research/umls/knowledge_sources/metathesaurus/index.html](https://www.nlm.nih.gov/research/umls/knowledge_sources/metathesaurus/index.html)
+
+Contexts extracted from the Semantic Scholar API for some UMLS KBs are available in [this](s3://ai2-s2-ontoemma/contexts/) S3 bucket.
+
+```bash
+aws s3 cp s3://ai2-s2-ontoemma/contexts/ data/kb_contexts/ --recursive
+```
+
+Once you have downloaded both datasets, update the corresponding path variables in `emma/paths.py` to point to the appropriate directories.
+
 #### Sampling negative data
 
 Hard negatives are sampled using the CandidateSelection module, selecting from candidate pairs that are negative matches. Easy negatives are sampled randomly from the rest of the KB. Currently, 5 hard negatives and 5 easy negatives are sampled for each positive match.
@@ -155,11 +149,27 @@ Mapping files are of the format described in [Data format: KB alignment file](ht
 `CPT:83937		DRUGBANK:DB00426	0	UMLS2017AA`
 `CPT:1014233		DRUGBANK:DB05907	0	UMLS2017AA`
 
-## Downloads
-Labeled data extracted from the UMLS metathesaurus is available [here](http://llwang.net/data/ontoemma/)
+## Run OntoEmma (align two KBs using trained model)
+To run OntoEmma, use `run_ontoemma.py`. The wrapper implements the following arguments:
 
-## Human Annotations
+- -p \<model_type> (lr = logistic regression, nn = neural network)
+- -m \<model_path>
+- -s \<source_ont> 
+- -t \<target_ont>
+- -i \<input_alignment>
+- -o \<output_file>
+- -g \<cuda_device>
+
+Example usage: 
+
+`python run_ontoemma.py -p nn -m model_path -s source_ont.owl -t target_ont.owl -i input_alignment.tsv -o output_alignment.tsv -g 0`
+
+This script assumes that the model has been pre-trained, and uses *align* functions in `OntoEmma.py` accordingly.
+
+
+## Human annotations for evaluation
 Available [here](https://docs.google.com/spreadsheets/u/1/d/e/2PACX-1vTsmTqHl6AusMLLXLIUGEYPNvCx_2_57dOEHSlaR9idrKDunlM0GwVHBlLUeQ0Tbq_15cthQ4GLHl4r/pubhtml#)
+
 
 ### Other
 
