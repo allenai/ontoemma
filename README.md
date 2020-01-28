@@ -1,5 +1,7 @@
 # OntoEMMA ontology matcher
 
+[![codecov](https://codecov.io/gh/allenai/ontoemma/branch/master/graph/badge.svg)](https://codecov.io/gh/allenai/ontoemma)
+
 This ontology matcher can be used to generate alignments between knowledgebases.
 
 ## Installation
