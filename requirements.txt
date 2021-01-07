@@ -1,5 +1,5 @@
 git+https://github.com/allenai/allennlp.git@c47b073acf97155e4dfbbfa2e032ecf06f6fd659#egg=allennlp
-lxml==4.1.0
+lxml==4.6.2
 django
 arrow==0.10.0
 boto3==1.4.7
