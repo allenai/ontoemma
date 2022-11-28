@@ -1,5 +1,7 @@
 # OntoEMMA ontology matcher
 
+**Note: This library is no longer being maintained.**
+
 This ontology matcher can be used to generate alignments between knowledgebases.
 
 ## Installation
