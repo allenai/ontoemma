@@ -7,7 +7,7 @@ In training mode, the `OntoEmma` module can use the `OntoEmmaLRModel` logistic r
 
 NN with AllenNLP:
 
-- Training data is formatted according to [Data format: OntoEmma training data](https://docs.google.com/a/allenai.org/document/d/1t8cwpTRqcscFEZOQJrtTMAhjAYzlA_demc9GCY0xYaU/edit?usp=sharing)
+- Training data is formatted according to the format described in `public_docs/training_file_format.txt`
 - Train model using AllenNLP; example configuration file given in `/config` directory
 - Save model to specified serialization directory
 - GPU flag gives user the option of specifying a CUDA device for training

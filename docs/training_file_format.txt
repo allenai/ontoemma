@@ -1,0 +1,57 @@
+Data format: OntoEmma training data
+
+File format
+
+This is a jsonlines file describing pairs of knowledgebase entities and whether or not they align. 
+
+Each entry consists of:
+source_ent: a dictionary of information about the source entity
+target_ent: a dictionary of information about the target entity
+label: either 0 or 1, where 0 indicates a non-match and 1 a match
+
+Each entity contains the research entity id, canonical name, aliases, definition, parent relations, child relations, and mention contexts. 
+
+An example entry:
+
+{
+    "label": 0,
+
+    "target_ent": {
+        "other_contexts": [],
+        "aliases": [
+            "caused by mutation in the immediate-early response 3-interacting protein 1 (ier3ip1, 609382.0001)"
+        ],
+        "canonical_name": "Caused by mutation in the immediate-early response 3-interacting protein 1 (IER3IP1, 609382.0001)",
+        "research_entity_id": "OMIM:MTHU035452",
+        "chd_relations": [],
+        "par_relations": [],
+        "definition": ""
+    },
+    
+    "source_ent": {
+        "other_contexts": [
+            "Decreases in weight gain at 21 and 28 days were associated with the presence of FHCA ( \u03b2 coefficient \u00b1 SE = -4.40 \u00b1 2.21 , p = 0.05 and -6.92 \u00b1 2.96 , p = 0.02 , respectively ) , whereas no significant differences were found between MHCA and no - HCA groups .",
+            "FHCA and MHCA were not identified as risk factors of weekly weight gain , after adjusting for possible confounders ( maternal ethnicity , parity , smoking during pregnancy , infant gender , IUGR status , SGA status , antenatal steroids , total fluid intake , late - onset sepsis , BPD ) .",
+            "Higher emphasis on lifestyle modifications using a new standardized tool is strongly recommended for those with a FHCA , as well as individuals who are at high risk , together with their family members .",
+            "Compared to women with no FHCA , women with FHCA were more likely to simultaneously smoke and be exposed to passive smoking ( aOR , 1.65 ; 95% CI , 1.17 to 2.31 ) and to simultaneously smoke and be physically inactive ( aOR , 1.62 ; 95% CI , 1.00 to 2.64 ) .",
+            "RESULTS Compared to women with no FHCA , women with FHCA were more likely to smoke ( adjusted odds ratio [ aOR ] , 1.32 ; 95% confidence interval [ CI ] , 1.06 to 1.65 ) , to be exposed to passive smoking ( aOR , 1.21 ; 95% CI , 1.15 to 1.65 ) , and less likely to engage in regular exercise ( aOR , 1.20 ; 95% CI , 1.01 to 1.41 ) .",
+            "The 2-benzoyloxy and 5-fluoro substituents rendered FBCA more potent than BCA and equipotent to FHCA .",
+            "In this study , BCA , FHCA and a novel analog 5-fluoro-2-benzoyloxycinnamaldehyde ( FBCA ) , were demonstrated to decrease growth and colony formation of human colon - derived HCT 116 and mammary - derived MCF-7 carcinoma cells under non - adhesive conditions .",
+            "Induction of Tumor Cell Death through Targeting Tubulin and Evoking Dysregulation of Cell Cycle Regulatory Proteins by Multifunctional Cinnamaldehydes Multifunctional trans - cinnamaldehyde ( CA ) and its analogs display anti - cancer properties , with 2-benzoyloxycinnamaldehyde ( BCA ) and 5-fluoro-2-hydroxycinnamaldehyde ( FHCA ) being identified as the ortho - substituted analogs that possess potent anti - tumor activities .",
+            "Combined effects of selected health behaviors for FHCA were significant , although no statistically significant interactions were observed between selected health behaviors .",
+            "CONCLUSION The study found that women with a FHCA exhibited unhealthy behaviors compared to women without FHCA .",
+            "PURPOSE The aim of this study was to examine the health - related behaviors related to a family history of cancer ( FHCA ) among Korean women underwent cancer screening ."
+        ],
+        "aliases": [
+            "hypercholanemia, familial"
+        ],
+        "canonical_name": "Hypercholanemia, Familial",
+        "research_entity_id": "MSH:C564336",
+        "chd_relations": [],
+        "par_relations": [],
+        "definition": ""
+    }
+}
+
+
+
